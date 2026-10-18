@@ -1,8 +1,16 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { ShieldAlert, ArrowLeft } from 'lucide-react';
 
 const Unauthorized = () => {
+  const location = useLocation();
+  const { actualRole, requiredRoles, type } = location.state || {};
+  const roleLabels = { ADMIN: 'Quản trị viên', DOCTOR: 'Bác sĩ', PATIENT: 'Bệnh nhân' };
+  const roleMismatch = type === 'role-mismatch';
+  const message = roleMismatch
+    ? `Tài khoản hiện tại có vai trò ${roleLabels[actualRole] || 'không xác định'}; khu vực này yêu cầu ${requiredRoles?.map((role) => roleLabels[role] || role).join(' hoặc ') || 'vai trò khác'}. Hệ thống vẫn giữ bảo vệ phân quyền.`
+    : 'Tài khoản của bạn không được phân quyền để truy cập vào khu vực này. Vui lòng liên hệ Quản trị viên hoặc quay lại trang chủ.';
+
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <div className="max-w-md w-full bg-white rounded-3xl shadow-xl border border-slate-100 p-8 text-center space-y-5">
@@ -10,9 +18,7 @@ const Unauthorized = () => {
           <ShieldAlert className="w-9 h-9" />
         </div>
         <h2 className="text-2xl font-bold text-slate-800">Không Có Quyền Truy Cập (403)</h2>
-        <p className="text-sm text-slate-500 leading-relaxed">
-          Tài khoản của bạn không được phân quyền để truy cập vào khu vực này. Vui lòng liên hệ Quản trị viên hoặc quay lại trang chủ.
-        </p>
+        <p className="text-sm text-slate-500 leading-relaxed">{message}</p>
         <div>
           <Link
             to="/login"

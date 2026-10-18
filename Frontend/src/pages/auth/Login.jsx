@@ -16,6 +16,32 @@ const Login = () => {
 
   const from = location.state?.from?.pathname || null;
 
+  const getRoleHome = (role) => ({
+    ADMIN: '/admin/dashboard',
+    DOCTOR: '/doctor/queue',
+    PATIENT: '/'
+  }[role] || null);
+
+  const getRoleSafePath = (role, path) => {
+    if (typeof path !== 'string' || !path.startsWith('/')) return null;
+    try {
+      const destination = new URL(path, window.location.origin);
+      if (destination.origin !== window.location.origin) return null;
+      const pathname = destination.pathname;
+      const isWithin = (root) => pathname === root || pathname.startsWith(`${root}/`);
+      const allowed = role === 'ADMIN'
+        ? isWithin('/admin')
+        : role === 'DOCTOR'
+          ? isWithin('/doctor')
+          : role === 'PATIENT'
+            ? pathname === '/' || isWithin('/patient')
+            : false;
+      return allowed ? pathname : null;
+    } catch {
+      return null;
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -24,15 +50,10 @@ const Login = () => {
     try {
       // Backend hỗ trợ email hoặc số điện thoại
       const user = await login(phoneNumber, password);
-      if (from) {
-        navigate(from, { replace: true });
-      } else if (user.role === 'ADMIN') {
-        navigate('/admin/dashboard', { replace: true });
-      } else if (user.role === 'DOCTOR') {
-        navigate('/doctor/queue', { replace: true });
-      } else {
-        navigate('/patient/booking', { replace: true });
-      }
+      const roleHome = getRoleHome(user?.role);
+      if (!roleHome) throw new Error('Tài khoản chưa có vai trò hợp lệ. Vui lòng liên hệ quản trị viên.');
+      const destination = getRoleSafePath(user.role, from) || roleHome;
+      navigate(destination, { replace: true });
     } catch (err) {
       setError(err.message || 'Số điện thoại hoặc mật khẩu không chính xác.');
     } finally {

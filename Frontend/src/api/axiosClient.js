@@ -16,6 +16,9 @@ axiosClient.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('mediclinic_token');
     if (token) {
+      // Keep the request's session identity so a late 401 from an older
+      // account cannot clear a newer account's session.
+      config.__mediclinicToken = token;
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
@@ -35,10 +38,16 @@ axiosClient.interceptors.response.use(
     if (error.response) {
       // Khi token hết hạn hoặc không hợp lệ (401)
       if (error.response.status === 401) {
-        localStorage.removeItem('mediclinic_token');
-        localStorage.removeItem('mediclinic_user');
-        // Không redirect nếu đang ở trang login/register
-        if (!window.location.pathname.includes('/login') && !window.location.pathname.includes('/register')) {
+        const requestToken = error.config?.__mediclinicToken;
+        const currentToken = localStorage.getItem('mediclinic_token');
+        const isPublicAuthRequest = /\/auth\/(login|register)(?:\?|$)/.test(error.config?.url || '');
+        if (!isPublicAuthRequest && requestToken && requestToken === currentToken) {
+          window.dispatchEvent(new CustomEvent('mediclinic:session-expired', { detail: { token: requestToken } }));
+        }
+        // A stale request from a previous account must not redirect or clear
+        // the current account. Login/register 401s are credential errors.
+        if (!isPublicAuthRequest && requestToken && requestToken === currentToken
+          && !window.location.pathname.includes('/login') && !window.location.pathname.includes('/register')) {
           window.location.href = '/login?session_expired=1';
         }
       }
