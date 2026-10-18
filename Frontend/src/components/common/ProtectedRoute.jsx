@@ -28,7 +28,11 @@ const ProtectedRoute = ({ allowedRoles = [] }) => {
 
   // 2. Đã đăng nhập nhưng không đủ quyền Role -> Chuyển tới trang Unauthorized
   if (allowedRoles.length > 0 && !allowedRoles.includes(role)) {
-    return <Navigate to="/unauthorized" replace />;
+    return <Navigate
+      to="/unauthorized"
+      state={{ type: 'role-mismatch', actualRole: role, requiredRoles: allowedRoles }}
+      replace
+    />;
   }
 
   // 3. Hợp lệ -> Render các route con
