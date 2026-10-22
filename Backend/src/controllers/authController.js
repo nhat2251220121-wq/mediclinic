@@ -6,25 +6,35 @@ const { generateToken } = require('../config/jwt');
  * Đăng ký tài khoản Bệnh nhân mới (qua SĐT & Mật khẩu)
  */
 const register = async (req, res, next) => {
+    const connection = await pool.getConnection();
     try {
         const { full_name, phone, email, password, gender, date_of_birth, address } = req.body;
-
-        if (!full_name || (!phone && !email) || !password) {
+        const cleanEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+        const cleanName = typeof full_name === 'string' ? full_name.trim() : '';
+        const cleanPhone = typeof phone === 'string' ? phone.trim() : '';
+        if (!cleanName || !cleanPhone || !/^\+?[0-9 ()-]{8,20}$/.test(cleanPhone) || !/^\S+@\S+\.\S+$/.test(cleanEmail) || typeof password !== 'string' || password.length < 8) {
             return res.status(400).json({
                 success: false,
-                message: 'Vui lòng cung cấp Họ tên, Số điện thoại và Mật khẩu.'
+                message: 'Vui lòng nhập họ tên, số điện thoại hợp lệ, email và mật khẩu tối thiểu 8 ký tự.'
             });
         }
-
-        const userPhone = phone ? phone.trim() : null;
-        const userEmail = email ? email.trim() : `${userPhone || Date.now()}@mediclinic.com`;
+        await connection.beginTransaction();
+        const [verification] = await connection.query(
+            `SELECT id FROM email_verifications WHERE email = ? AND verified_at IS NOT NULL
+             AND consumed_at IS NULL AND expires_at > NOW() ORDER BY id DESC LIMIT 1 FOR UPDATE`, [cleanEmail]
+        );
+        if (!verification.length) {
+            await connection.rollback();
+            return res.status(400).json({ success: false, message: 'Vui lòng xác thực email trước khi đăng ký.' });
+        }
 
         // Kiểm tra SĐT hoặc Email trùng
-        const [existing] = await pool.query(
-            'SELECT id FROM Users WHERE phone = ? OR email = ?',
-            [userPhone, userEmail]
+        const [existing] = await connection.query(
+            'SELECT id FROM users WHERE phone = ? OR email = ?',
+            [cleanPhone, cleanEmail]
         );
         if (existing.length > 0) {
+            await connection.rollback();
             return res.status(400).json({
                 success: false,
                 message: 'Số điện thoại hoặc Email này đã được sử dụng.'
@@ -35,18 +45,20 @@ const register = async (req, res, next) => {
         const salt = await bcrypt.genSalt(10);
         const password_hash = await bcrypt.hash(password, salt);
 
-        // Lưu vào bảng Users
-        const [result] = await pool.query(
-            `INSERT INTO Users (full_name, phone, email, password_hash, gender, date_of_birth, address, role) 
+        // Lưu vào bảng users
+        const [result] = await connection.query(
+            `INSERT INTO users (full_name, phone, email, password_hash, gender, date_of_birth, address, role)
              VALUES (?, ?, ?, ?, ?, ?, ?, 'PATIENT')`,
-            [full_name, userPhone, userEmail, password_hash, gender || 'OTHER', date_of_birth || null, address || null]
+            [cleanName, cleanPhone, cleanEmail, password_hash, gender || 'OTHER', date_of_birth || null, address || null]
         );
+        await connection.query('UPDATE email_verifications SET consumed_at = NOW() WHERE id = ?', [verification[0].id]);
+        await connection.commit();
 
         const newUserId = result.insertId;
         const token = generateToken({
             id: newUserId,
-            phone: userPhone,
-            email: userEmail,
+            phone: cleanPhone,
+            email: cleanEmail,
             role: 'PATIENT',
             full_name
         });
@@ -58,15 +70,18 @@ const register = async (req, res, next) => {
                 token,
                 user: {
                     id: newUserId,
-                    full_name,
-                    phone: userPhone,
-                    email: userEmail,
+                    full_name: cleanName,
+                    phone: cleanPhone,
+                    email: cleanEmail,
                     role: 'PATIENT'
                 }
             }
         });
     } catch (error) {
+        await connection.rollback();
         next(error);
+    } finally {
+        connection.release();
     }
 };
 
@@ -90,9 +105,9 @@ const login = async (req, res, next) => {
 
         // Truy vấn user theo phone hoặc email
         const [users] = await pool.query(
-            `SELECT id, full_name, phone, email, password_hash, role, is_active 
-             FROM Users 
-             WHERE phone = ? OR email = ?`,
+            `SELECT u.id, u.full_name, u.phone, u.email, u.password_hash, u.role, u.is_active, d.id AS doctor_id, d.avatar_url
+             FROM users u LEFT JOIN doctors d ON d.user_id = u.id
+             WHERE u.phone = ? OR u.email = ?`,
             [cleanIdentifier, cleanIdentifier]
         );
 
@@ -131,13 +146,7 @@ const login = async (req, res, next) => {
         });
 
         // Nếu là Doctor, lấy thêm doctor_id
-        let doctorId = null;
-        if (user.role === 'DOCTOR') {
-            const [doctorData] = await pool.query('SELECT id FROM Doctors WHERE user_id = ?', [user.id]);
-            if (doctorData.length > 0) {
-                doctorId = doctorData[0].id;
-            }
-        }
+        const doctorId = user.role === 'DOCTOR' ? user.doctor_id : null;
 
         res.status(200).json({
             success: true,
@@ -150,6 +159,7 @@ const login = async (req, res, next) => {
                     full_name: user.full_name,
                     phone: user.phone,
                     email: user.email,
+                    avatar_url: user.avatar_url || null,
                     role: user.role
                 }
             }
@@ -166,8 +176,8 @@ const getProfile = async (req, res, next) => {
     try {
         const userId = req.user.id;
         const [rows] = await pool.query(
-            `SELECT id, full_name, phone, email, gender, date_of_birth, citizen_id, insurance_code, address, role, created_at 
-             FROM Users WHERE id = ?`,
+            `SELECT u.id, u.full_name, u.phone, u.email, u.gender, DATE_FORMAT(u.date_of_birth, '%Y-%m-%d') AS date_of_birth, u.citizen_id, u.insurance_code, u.emergency_contact, u.job, u.address, u.role, u.created_at, d.avatar_url
+             FROM users u LEFT JOIN doctors d ON d.user_id = u.id WHERE u.id = ?`,
             [userId]
         );
 
@@ -187,8 +197,28 @@ const getProfile = async (req, res, next) => {
     }
 };
 
+const updateProfile = async (req, res, next) => {
+    try {
+        const { full_name, phone, gender, date_of_birth, citizen_id, insurance_code, emergency_contact, job, address } = req.body;
+        const name = typeof full_name === 'string' ? full_name.trim() : '';
+        const cleanPhone = typeof phone === 'string' ? phone.trim() : '';
+        if (!name || !/^\+?[0-9 ()-]{8,20}$/.test(cleanPhone) || !['MALE', 'FEMALE', 'OTHER'].includes(gender) || (date_of_birth && !/^\d{4}-\d{2}-\d{2}$/.test(date_of_birth))) {
+            return res.status(400).json({ success: false, message: 'Họ tên, số điện thoại hoặc giới tính không hợp lệ.' });
+        }
+        const [result] = await pool.query(
+            `UPDATE users SET full_name = ?, phone = ?, gender = ?, date_of_birth = ?, citizen_id = ?, insurance_code = ?,
+             emergency_contact = ?, job = ?, address = ? WHERE id = ? AND is_active = TRUE`,
+            [name, cleanPhone, gender, date_of_birth || null, citizen_id || null, insurance_code || null, emergency_contact || null, job || null, address || null, req.user.id]
+        );
+        const [rows] = await pool.query("SELECT id, full_name, phone, email, gender, DATE_FORMAT(date_of_birth, '%Y-%m-%d') AS date_of_birth, citizen_id, insurance_code, emergency_contact, job, address, role FROM users WHERE id = ?", [req.user.id]);
+        if (!rows.length) return res.status(404).json({ success: false, message: 'Không tìm thấy tài khoản đang hoạt động.' });
+        return res.json({ success: true, message: 'Đã lưu hồ sơ.', data: rows[0] });
+    } catch (error) { next(error); }
+};
+
 module.exports = {
     register,
     login,
-    getProfile
+    getProfile,
+    updateProfile
 };

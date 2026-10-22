@@ -3,106 +3,79 @@ dotenv.config();
 
 let GoogleGenerativeAI = null;
 try {
-    const genaiModule = require('@google/generative-ai');
-    GoogleGenerativeAI = genaiModule.GoogleGenerativeAI;
-} catch (e) {
-    // Sẽ được tải khi đã cài đặt dependencies
+  ({ GoogleGenerativeAI } = require('@google/generative-ai'));
+} catch {
+  // The rule-based recommendation remains available when the optional SDK is absent.
 }
 
-let genAI = null;
-if (process.env.GEMINI_API_KEY && GoogleGenerativeAI) {
-    try {
-        genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        console.log('✅ [AI] Khởi tạo Google Gemini GenerativeAI thành công.');
-    } catch (err) {
-        console.warn('⚠️ [AI] Khởi tạo Gemini thất bại, sẽ kích hoạt chế độ dự phòng.');
-    }
-} else {
-    console.warn('⚠️ [AI] Chưa cấu hình GEMINI_API_KEY. Hệ thống sẽ tự động dùng bộ dự phòng AI chuyên khoa.');
-}
+const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
-/**
- * Phân tích và phân loại triệu chứng qua AI
- * @param {string} symptoms Chuỗi triệu chứng người bệnh nhập
- * @returns {Promise<Object>} { predicted_specialty, confidence_level, urgency_level, initial_advice, recommended_actions }
- */
-const classifySymptomWithAI = async (symptoms) => {
-    // 1. Nếu có Gemini API Key và client
-    if (genAI && process.env.GEMINI_API_KEY) {
-        try {
-            const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-            const prompt = `
-Bạn là trợ lý y khoa AI thông minh tại phòng khám đa khoa MediClinic.
-Người bệnh mô tả triệu chứng sau: "${symptoms}"
+const matchSpecialty = (name, specialties) => {
+  const normalized = normalize(name);
+  return specialties.find((specialty) => normalize(specialty.name) === normalized) || null;
+};
 
-Dựa trên mô tả, hãy phân tích và trả về DUY NHẤT một chuỗi định dạng JSON hợp lệ (không kèm markdown \`\`\`json) với cấu trúc sau:
-{
-  "predicted_specialty": "Tên chuyên khoa phù hợp nhất (Ví dụ: Nội tổng quát, Tim mạch, Da liễu, Tai Mũi Họng, Nhi khoa, Cơ xương khớp, Thần kinh)",
-  "specialty_id_guess": 1, 
-  "urgency_level": "LOW hoặc MEDIUM hoặc HIGH hoặc EMERGENCY",
-  "urgency_text": "Mức độ khẩn cấp bằng tiếng Việt",
-  "initial_advice": "Lời khuyên y khoa sơ bộ, dặn dò chuẩn bị trước khi đến phòng khám",
-  "possible_conditions": ["Tên khả năng 1", "Tên khả năng 2"],
-  "disclaimer": "Kết quả AI chỉ mang tính chất tham khảo định hướng chuyên khoa, không thay thế cho chẩn đoán của bác sĩ trực tiếp."
-}
-`;
-            const result = await model.generateContent(prompt);
-            const response = await result.response;
-            const text = response.text().trim();
+const classifyByRules = (symptoms, specialties) => {
+  const text = normalize(symptoms);
+  const groups = [
+    { keys: ['tim', 'nguc', 'kho tho', 'huyet ap', 'hoi hop'], terms: ['tim mach', 'tim'] },
+    { keys: ['da', 'ngua', 'di ung', 'man do', 'mun'], terms: ['da lieu', 'da'] },
+    { keys: ['tai', 'mui', 'hong', 'xoang', 'so mui'], terms: ['tai mui hong', 'tai mui'] },
+    { keys: ['mat', 'thi luc', 'nhin mo'], terms: ['mat', 'nhan khoa'] },
+    { keys: ['xuong', 'khop', 'lung', 'co bap'], terms: ['co xuong khop', 'xuong khop'] },
+    { keys: ['tre em', 'be ', 'nhi'], terms: ['nhi khoa', 'nhi'] }
+  ];
+  let selected = null;
+  for (const group of groups) {
+    if (!group.keys.some((key) => text.includes(key))) continue;
+    selected = specialties.find((specialty) => group.terms.some((term) => normalize(specialty.name).includes(term))) || null;
+    if (selected) break;
+  }
+  if (!selected) selected = specialties.find((specialty) => normalize(specialty.name).includes('noi tong quat')) || null;
 
-            // Làm sạch markdown nếu có
-            const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            const parsed = JSON.parse(cleanJson);
-            return parsed;
-        } catch (error) {
-            console.error('❌ [AI] Lỗi khi gọi Gemini API:', error.message);
-            // Fallback xuống cơ chế Rule-based bên dưới
-        }
-    }
+  const urgent = ['dau nguc du doi', 'kho tho nang', 'bat tinh', 'dot quy', 'chay mau khong cam'].some((term) => text.includes(term));
+  return {
+    predicted_specialty: selected?.name || null,
+    specialty_id: selected?.id || null,
+    recommendation_source: 'RULE_BASED',
+    urgency_level: urgent ? 'EMERGENCY' : 'MEDIUM',
+    urgency_text: urgent ? 'Cần liên hệ cấp cứu hoặc đến cơ sở y tế gần nhất ngay' : 'Cần được nhân viên y tế đánh giá',
+    initial_advice: urgent
+      ? 'Không chờ tư vấn trực tuyến. Hãy gọi cấp cứu hoặc đến cơ sở y tế gần nhất ngay.'
+      : 'Thông tin này chỉ hỗ trợ chọn nơi khám. Hãy đặt lịch để được nhân viên y tế đánh giá trực tiếp.',
+    possible_conditions: [],
+    disclaimer: 'Đây không phải chẩn đoán y khoa. Nếu triệu chứng nặng lên hoặc thấy nguy hiểm, hãy liên hệ cấp cứu.'
+  };
+};
 
-    // 2. Chế độ Rule-based Dự phòng (Đảm bảo đồ án luôn chạy mượt mà ngay cả khi offline hoặc chưa có key)
-    const lower = symptoms.toLowerCase();
-    let specialty = 'Nội tổng quát';
-    let specialtyId = 1;
-    let urgency = 'MEDIUM';
-    let urgencyText = 'Trung bình';
-    let advice = 'Nên nghỉ ngơi, uống đủ nước và theo dõi thân nhiệt. Đặt lịch khám sớm để được chẩn đoán chính xác.';
-    let conditions = ['Cảm cúm thông thường', 'Rối loạn tiêu hóa'];
+const classifySymptomWithAI = async (symptoms, specialties) => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || !GoogleGenerativeAI || !specialties.length) return classifyByRules(symptoms, specialties);
 
-    if (lower.includes('tim') || lower.includes('đau ngực') || lower.includes('khó thở') || lower.includes('huyết áp')) {
-        specialty = 'Tim mạch';
-        specialtyId = 2;
-        urgency = 'HIGH';
-        urgencyText = 'Cần chú ý cao';
-        advice = 'Tránh vận động mạnh, nghỉ ngơi ở tư thế nửa nằm nửa ngồi. Nếu đau tức ngực dữ dội kèm khó thở, hãy đến ngay cơ sở y tế gần nhất.';
-        conditions = ['Đau thắt ngực', 'Tăng huyết áp', 'Rối loạn nhịp tim'];
-    } else if (lower.includes('da') || lower.includes('ngứa') || lower.includes('dị ứng') || lower.includes('mẩn đỏ') || lower.includes('mụn')) {
-        specialty = 'Da liễu';
-        specialtyId = 3;
-        urgency = 'LOW';
-        urgencyText = 'Bình thường';
-        advice = 'Không gãi chà xát mạnh gây trầy xước nhiễm trùng. Tạm ngừng các loại mỹ phẩm hoặc xà phòng có chất tẩy rửa mạnh.';
-        conditions = ['Viêm da tiếp xúc', 'Dị ứng thời tiết', 'Mày đay'];
-    } else if (lower.includes('tai') || lower.includes('mũi') || lower.includes('họng') || lower.includes('ho') || lower.includes('sổ mũi') || lower.includes('xoang')) {
-        specialty = 'Tai Mũi Họng';
-        specialtyId = 4;
-        urgency = 'LOW';
-        urgencyText = 'Bình thường';
-        advice = 'Súc miệng nước muối sinh lý ấm mỗi ngày, giữ ấm vùng cổ họng và đeo khẩu trang khi ra ngoài.';
-        conditions = ['Viêm họng cấp', 'Viêm xoang', 'Viêm mũi dị ứng'];
-    }
-
+  try {
+    const client = new GoogleGenerativeAI(apiKey);
+    const model = client.getGenerativeModel({ model: process.env.GEMINI_MODEL || 'gemini-3.8-flash' });
+    const allowedSpecialties = specialties.map((specialty) => specialty.name);
+    const prompt = `Bạn là công cụ định hướng nơi khám, không chẩn đoán hoặc kê đơn. Chỉ chọn chuyên khoa trong danh sách sau: ${JSON.stringify(allowedSpecialties)}. Nếu không phù hợp, trả predicted_specialty là null. Nội dung người dùng: ${JSON.stringify(symptoms)}. Trả duy nhất JSON với các trường predicted_specialty, urgency_level (LOW, MEDIUM, HIGH, EMERGENCY), urgency_text, initial_advice, disclaimer. Không suy diễn mã hoặc ID chuyên khoa.`;
+    const result = await model.generateContent(prompt);
+    const raw = (await result.response).text().trim().replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(raw);
+    const specialty = matchSpecialty(parsed.predicted_specialty, specialties);
+    if (parsed.predicted_specialty && !specialty) return classifyByRules(symptoms, specialties);
     return {
-        predicted_specialty: specialty,
-        specialty_id_guess: specialtyId,
-        urgency_level: urgency,
-        urgency_text: urgencyText,
-        initial_advice: advice,
-        possible_conditions: conditions,
-        disclaimer: 'Kết quả AI chỉ mang tính chất tham khảo định hướng chuyên khoa, không thay thế cho chẩn đoán của bác sĩ trực tiếp.'
+      predicted_specialty: specialty?.name || null,
+      specialty_id: specialty?.id || null,
+      recommendation_source: 'AI',
+      urgency_level: ['LOW', 'MEDIUM', 'HIGH', 'EMERGENCY'].includes(parsed.urgency_level) ? parsed.urgency_level : 'MEDIUM',
+      urgency_text: String(parsed.urgency_text || 'Cần được nhân viên y tế đánh giá').slice(0, 300),
+      initial_advice: String(parsed.initial_advice || 'Hãy trao đổi với nhân viên y tế.').slice(0, 1000),
+      possible_conditions: [],
+      disclaimer: 'Gợi ý do AI tạo, không phải chẩn đoán y khoa và không thay thế thăm khám trực tiếp.'
     };
+  } catch (error) {
+    console.error('[AI] Classification request failed; using rule-based recommendation:', error.message);
+    return classifyByRules(symptoms, specialties);
+  }
 };
 
-module.exports = {
-    classifySymptomWithAI
-};
+module.exports = { classifySymptomWithAI };

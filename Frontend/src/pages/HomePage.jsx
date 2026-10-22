@@ -1,125 +1,145 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ShieldPlus, Calendar, Bot, ArrowRight, User, Stethoscope, Phone, Mail, Award, CheckCircle2, ChevronRight, X } from 'lucide-react';
+import axiosClient from '../api/axiosClient';
+import ImageWithFallback from '../components/common/ImageWithFallback';
+import { ShieldPlus, Calendar, Bot, History, ChevronDown, LogOut, User, X } from 'lucide-react';
 import AIChatWidget from '../components/common/AIChatWidget';
 
-const clinicServices = [
-  {
-    id: 1,
-    name: 'Khám Nội tổng quát',
-    price: 300000,
-    image: 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=500&auto=format&fit=crop&q=60',
-    description: 'Kiểm tra sức khỏe định kỳ, tư vấn điều trị toàn diện các bệnh lý tiêu hóa, hô hấp, tuần hoàn và trao đổi chất.',
-    doctors: [
-      {
-        name: 'BS. CKII Nguyễn Văn An',
-        specialty: 'Nội tổng quát',
-        room: 'Phòng Khám Nội Tổng Quát - Tầng 1 (P.101)',
-        experience: 'Tốt nghiệp Bác sĩ Chuyên khoa II Đại học Y Dược. Có hơn 15 năm kinh nghiệm trong điều trị các bệnh nội khoa tổng quát và tim mạch.',
-        email: 'doctor.an@mediclinic.com',
-        avatar: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=150&auto=format&fit=crop&q=80'
-      }
-    ]
-  },
-  {
-    id: 2,
-    name: 'Khám Ngoại',
-    price: 500000,
-    image: 'https://images.unsplash.com/photo-1551076805-e1869033e561?w=500&auto=format&fit=crop&q=60',
-    description: 'Dịch vụ Khám Ngoại tập trung vào chẩn đoán và điều trị các bệnh lý liên quan hệ cơ xương khớp, chấn thương, vết thương phần mềm.',
-    doctors: [
-      {
-        name: 'BS. CKI Trần Thị Bình',
-        specialty: 'Ngoại khoa & Tim mạch',
-        room: 'Phòng Khám Ngoại - Tầng 1 (P.102)',
-        experience: 'Tốt nghiệp Bác sĩ Chuyên khoa Ngoại tại Đại học Y Dược TP.HCM. Hơn 12 năm kinh nghiệm điều trị bệnh lý mạch vành và chấn thương mô mềm.',
-        email: 'doctor.binh@mediclinic.com',
-        avatar: 'https://images.unsplash.com/photo-1594824813583-82f5b61e2715?w=150&auto=format&fit=crop&q=80'
-      }
-    ]
-  },
-  {
-    id: 3,
-    name: 'Khám Da liễu',
-    price: 250000,
-    image: 'https://images.unsplash.com/photo-1579684385127-1ef15d508118?w=500&auto=format&fit=crop&q=60',
-    description: 'Chăm sóc và điều trị các bệnh lý về da như viêm da dị ứng, mụn trứng cá, chàm, nấm da và thẩm mỹ y khoa.',
-    doctors: [
-      {
-        name: 'ThS. BS Lê Đức Thái',
-        specialty: 'Da liễu lâm sàng',
-        room: 'Phòng Da Liễu - Tầng 2 (P.201)',
-        experience: 'Thạc sĩ Da liễu, từng tu nghiệp tại Pháp, chuyên sâu về trị liệu laser và phục hồi cấu trúc da liễu thẩm mỹ y khoa.',
-        email: 'doctor.thai@mediclinic.com',
-        avatar: 'https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=150&auto=format&fit=crop&q=80'
-      }
-    ]
-  },
-  {
-    id: 4,
-    name: 'Khám Răng - Hàm - Mặt',
-    price: 400000,
-    image: 'https://images.unsplash.com/photo-1606811841689-23dfddce3e95?w=500&auto=format&fit=crop&q=60',
-    description: 'Khám, tư vấn và điều trị các vấn đề về răng miệng như sâu răng, viêm nướu, chỉnh nha, nhổ răng, tẩy trắng và thẩm mỹ nụ cười.',
-    doctors: [
-      {
-        name: 'BS. Đào Phan Quốc Hoài',
-        specialty: 'Răng Hàm Mặt',
-        room: 'Phòng Răng Hàm Mặt - Tầng 2 (P.202)',
-        experience: 'Bác sĩ chuyên khoa Răng Hàm Mặt giàu kinh nghiệm, tận tâm mang lại sự an tâm và nụ cười khỏe đẹp cho người bệnh.',
-        email: 'doctor.hoai@mediclinic.com',
-        avatar: 'https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=150&auto=format&fit=crop&q=80'
-      }
-    ]
-  }
-];
-
 const HomePage = () => {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, logout } = useAuth();
   const navigate = useNavigate();
   const [selectedService, setSelectedService] = useState(null);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [clinicServices, setClinicServices] = useState([]);
+  const [serviceDoctors, setServiceDoctors] = useState([]);
+  const [serviceDoctorsLoading, setServiceDoctorsLoading] = useState(false);
+  const [serviceDoctorsError, setServiceDoctorsError] = useState('');
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState('');
+
+  useEffect(() => {
+    axiosClient.get('/doctors/services')
+      .then((serviceResult) => setClinicServices(serviceResult.data || []))
+      .catch(() => setCatalogError('Không tải được danh mục hiện tại. Vui lòng thử tải lại trang.'))
+      .finally(() => setCatalogLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (!selectedService) {
+      setServiceDoctors([]);
+      setServiceDoctorsLoading(false);
+      setServiceDoctorsError('');
+      return undefined;
+    }
+    if (!selectedService.specialty_id) {
+      setServiceDoctors([]);
+      setServiceDoctorsError('Dịch vụ chưa được Admin gán chuyên khoa.');
+      return undefined;
+    }
+    let active = true;
+    setServiceDoctors([]);
+    setServiceDoctorsError('');
+    setServiceDoctorsLoading(true);
+    axiosClient.get(`/doctors?specialty_id=${encodeURIComponent(selectedService.specialty_id)}`)
+      .then((result) => { if (active) setServiceDoctors(result.data || []); })
+      .catch(() => { if (active) setServiceDoctorsError('Không tải được danh sách bác sĩ của chuyên khoa này.'); })
+      .finally(() => { if (active) setServiceDoctorsLoading(false); });
+    return () => { active = false; };
+  }, [selectedService?.id, selectedService?.specialty_id]);
+
+  const handleLogout = () => {
+    logout();
+    setDropdownOpen(false);
+    navigate('/login');
+  };
 
   const handleBookingClick = (service) => {
-    navigate('/patient/booking', { state: { selectedService: service } });
+    const bookingUrl = `/patient/booking?service_id=${encodeURIComponent(service.id)}`;
+    if (!isAuthenticated || user?.role !== 'PATIENT') {
+      navigate('/login', { state: { from: { pathname: '/patient/booking', search: `?service_id=${encodeURIComponent(service.id)}` }, selectedService: service } });
+      return;
+    }
+    navigate(bookingUrl, { state: { selectedService: service } });
+  };
+
+  const getRoleLabel = (role) => {
+    if (role === 'ADMIN') return 'Quản trị viên';
+    if (role === 'DOCTOR') return 'Bác sĩ';
+    return 'Bệnh nhân';
   };
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
       {/* Top Navbar theo mẫu đồ án */}
-      <header className="h-20 bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+      <header className="h-16 bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
         <div className="max-w-7xl h-full mx-auto px-6 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-sky-600 rounded-2xl flex items-center justify-center text-white shadow-md shadow-sky-600/30">
-              <ShieldPlus className="w-6 h-6" />
+          <Link to="/" className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-sky-600 rounded-2xl flex items-center justify-center text-white shadow-md shadow-sky-600/30">
+              <ShieldPlus className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="font-black text-xl text-sky-700 tracking-tight leading-none">MediClinic</h1>
+              <h1 className="font-black text-lg text-sky-700 tracking-tight leading-none">MediClinic</h1>
               <span className="text-[10px] text-teal-600 font-semibold uppercase tracking-wider">Hệ thống Y tế thông minh</span>
             </div>
-          </div>
+          </Link>
 
-          <nav className="hidden md:flex items-center gap-8 text-sm font-semibold text-slate-600">
+          <nav className="hidden md:flex items-center gap-6 text-sm font-semibold text-slate-600">
             <a href="#services" className="hover:text-sky-600 transition">Dịch vụ y tế</a>
             <a href="#about" className="hover:text-sky-600 transition">Giới thiệu phòng khám</a>
-            <Link to="/patient/ai-chat" className="text-teal-600 hover:text-teal-700 flex items-center gap-1 font-bold">
-              <Bot className="w-4 h-4" />
-              <span>Trợ lý AI Triệu chứng</span>
-            </Link>
           </nav>
 
           <div className="flex items-center gap-3">
             {isAuthenticated ? (
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-semibold text-slate-700 hidden sm:inline">
-                  Xin chào, <strong className="text-sky-700">{user?.full_name}</strong>
-                </span>
-                <Link
-                  to={user?.role === 'ADMIN' ? '/admin/dashboard' : user?.role === 'DOCTOR' ? '/doctor/queue' : '/patient/ai-chat'}
-                  className="px-4 py-2 bg-sky-600 text-white rounded-xl text-xs font-bold hover:bg-sky-700 transition shadow-sm"
+              /* ===== DROPDOWN USER MENU ===== */
+              <div className="relative">
+                <button
+                  onClick={() => setDropdownOpen(!dropdownOpen)}
+                  className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-slate-100 transition"
                 >
-                  Vào Cổng Hệ Thống
-                </Link>
+                  <div className="w-8 h-8 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center font-bold text-sm border border-sky-200">
+                    {user?.full_name ? user.full_name.charAt(0).toUpperCase() : <User className="w-4 h-4" />}
+                  </div>
+                  <div className="hidden sm:block text-left">
+                    <div className="text-xs font-bold text-slate-800 leading-tight">{user?.full_name}</div>
+                    <div className="text-[10px] text-emerald-600 font-semibold">{getRoleLabel(user?.role)}</div>
+                  </div>
+                  <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {/* Dropdown menu */}
+                {dropdownOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
+                    <div className="absolute right-0 mt-2 w-52 bg-white rounded-2xl shadow-xl border border-slate-200 py-2 z-50 animate-fadeIn">
+                      <Link
+                        to="/patient/history"
+                        onClick={() => setDropdownOpen(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition font-medium"
+                      >
+                        <History className="w-4 h-4 text-sky-600" />
+                        <span>Lịch sử khám bệnh</span>
+                      </Link>
+                      <Link
+                        to="/patient/booking"
+                        onClick={() => setDropdownOpen(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition font-medium"
+                      >
+                        <Calendar className="w-4 h-4 text-teal-600" />
+                        <span>Đặt lịch khám mới</span>
+                      </Link>
+                      <div className="border-t border-slate-100 mt-1 pt-1">
+                        <button
+                          onClick={handleLogout}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-rose-600 hover:bg-rose-50 transition font-medium"
+                        >
+                          <LogOut className="w-4 h-4" />
+                          <span>Đăng xuất</span>
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             ) : (
               <>
@@ -141,39 +161,19 @@ const HomePage = () => {
         </div>
       </header>
 
-      {/* Hero Banner (Hình 3.13) */}
-      <section className="relative bg-gradient-to-r from-sky-900 via-sky-800 to-teal-800 text-white py-24 px-6 overflow-hidden">
-        <div className="absolute inset-0 opacity-20 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:16px_16px]"></div>
-        <div className="max-w-4xl mx-auto text-center relative z-10 space-y-6">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md text-sky-200 text-xs font-semibold border border-white/20">
-            <span>✨ Phòng Khám Đa Khoa Hiện Đại Hàng Đầu</span>
+      <section id="about" className="bg-sky-900 text-white py-20 px-6">
+        <div className="max-w-4xl mx-auto text-center space-y-5">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-sky-100 text-sm font-medium">
+            <span>Chăm sóc sức khỏe và đặt lịch khám</span>
           </div>
 
-          <h2 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight">
-            Chào mừng đến với <span className="text-teal-300">Phòng khám Sức Khỏe!</span>
+          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight leading-tight">
+            Chăm sóc sức khỏe tại <span className="text-cyan-200">MediClinic</span>
           </h2>
 
-          <p className="text-base sm:text-lg text-slate-200 max-w-2xl mx-auto font-normal leading-relaxed">
-            Nơi chăm sóc sức khỏe toàn diện cho bạn và gia đình. Tích hợp Trợ lý Trí tuệ Nhân tạo (AI) hỗ trợ tư vấn và định hướng chuyên khoa 24/7.
+          <p className="text-base text-slate-100 max-w-2xl mx-auto leading-relaxed">
+            Xem dịch vụ, bác sĩ đang hoạt động và đặt lịch khám trực tuyến.
           </p>
-
-          <div className="pt-4 flex flex-wrap items-center justify-center gap-4">
-            <Link
-              to="/patient/booking"
-              className="px-8 py-3.5 bg-gradient-to-r from-teal-500 to-sky-500 hover:from-teal-600 hover:to-sky-600 text-white font-bold rounded-2xl transition-all shadow-xl shadow-teal-500/30 flex items-center gap-2"
-            >
-              <Calendar className="w-5 h-5" />
-              <span>Đặt lịch hẹn ngay</span>
-            </Link>
-
-            <Link
-              to="/patient/ai-chat"
-              className="px-6 py-3.5 bg-white/10 hover:bg-white/20 text-white font-bold rounded-2xl backdrop-blur-md border border-white/20 transition flex items-center gap-2"
-            >
-              <Bot className="w-5 h-5 text-teal-300" />
-              <span>Hỏi Trợ lý AI Triệu chứng</span>
-            </Link>
-          </div>
         </div>
       </section>
 
@@ -186,19 +186,18 @@ const HomePage = () => {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {catalogLoading && <p className="col-span-full text-center text-sm text-slate-500">Đang tải dịch vụ…</p>}
+          {catalogError && <p role="alert" className="col-span-full text-center text-sm text-rose-700">{catalogError}</p>}
+          {!catalogLoading && !catalogError && clinicServices.length === 0 && <p className="col-span-full text-center text-sm text-slate-500">Hiện chưa có dịch vụ đang nhận đặt lịch.</p>}
           {clinicServices.map((svc) => (
             <div
               key={svc.id}
-              className="bg-white rounded-3xl overflow-hidden border border-slate-200 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col group"
+              className="bg-white rounded-xl overflow-hidden border border-slate-200 shadow-sm hover:shadow-md transition flex flex-col group"
             >
-              <div className="h-44 overflow-hidden relative">
-                <img
-                  src={svc.image}
-                  alt={svc.name}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                />
-                <span className="absolute top-3 right-3 bg-white/95 backdrop-blur-md px-3 py-1 rounded-full text-xs font-black text-emerald-600 shadow-sm">
-                  {svc.price.toLocaleString()} đ
+              <div className="h-24 bg-sky-50 flex items-center justify-center relative border-b border-slate-100">
+                <ImageWithFallback src={svc.image_url} alt={svc.name} className="absolute inset-0 h-full w-full object-cover" fallback={<ShieldPlus className="w-9 h-9 text-sky-700" />} />
+                <span className="absolute top-3 right-3 bg-white px-3 py-1 rounded-full text-xs font-bold text-emerald-700 border border-slate-200">
+                  {Number(svc.price).toLocaleString('vi-VN')} ₫
                 </span>
               </div>
 
@@ -237,7 +236,7 @@ const HomePage = () => {
       {selectedService && (
         <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setSelectedService(null)}></div>
-          <div className="relative bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-100 z-10 space-y-6">
+          <div className="relative bg-white rounded-xl max-w-xl w-full p-6 shadow-xl border border-slate-100 z-10 space-y-6">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-lg font-black text-slate-800">Thông tin dịch vụ</h3>
               <button onClick={() => setSelectedService(null)} className="p-1 rounded-lg text-slate-400 hover:text-slate-600">
@@ -247,15 +246,11 @@ const HomePage = () => {
 
             <div className="space-y-4">
               <div className="flex gap-4 items-start">
-                <img
-                  src={selectedService.image}
-                  alt={selectedService.name}
-                  className="w-24 h-24 rounded-2xl object-cover border border-slate-200"
-                />
+                <ImageWithFallback src={selectedService.image_url} alt={selectedService.name} className="w-16 h-16 rounded-xl object-cover border border-slate-200" fallback={<ShieldPlus className="w-8 h-8 text-sky-700" />} />
                 <div>
                   <h4 className="text-base font-bold text-slate-900">{selectedService.name}</h4>
                   <div className="text-sm font-extrabold text-emerald-600 mt-1">
-                    Phí khám: {selectedService.price.toLocaleString()} đ
+                    Phí khám: {Number(selectedService.price).toLocaleString('vi-VN')} ₫
                   </div>
                   <p className="text-xs text-slate-500 mt-1 leading-relaxed">
                     {selectedService.description}
@@ -263,26 +258,27 @@ const HomePage = () => {
                 </div>
               </div>
 
-              {/* Bác sĩ phụ trách dịch vụ */}
+              {/* Public doctor directory */}
               <div className="space-y-3 pt-3 border-t border-slate-100">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                  Bác sĩ phụ trách dịch vụ:
+                  Bác sĩ đang hoạt động:
                 </span>
-                {selectedService.doctors.map((doc, idx) => (
-                  <div key={idx} className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex gap-4 items-start">
-                    <img
-                      src={doc.avatar}
-                      alt={doc.name}
-                      className="w-14 h-14 rounded-2xl object-cover border border-slate-300"
-                    />
+                {!selectedService.specialty_id
+                  ? <p role="status" className="text-xs text-amber-700">Dịch vụ này chưa được Admin gán chuyên khoa nên chưa thể liệt kê bác sĩ.</p>
+                  : serviceDoctorsLoading
+                    ? <p className="text-xs text-slate-500">Đang tải bác sĩ thuộc chuyên khoa {selectedService.specialty_name || ''}…</p>
+                    : serviceDoctorsError
+                      ? <p role="alert" className="text-xs text-rose-700">{serviceDoctorsError}</p>
+                      : serviceDoctors.length === 0
+                        ? <p className="text-xs text-slate-500">Chưa có bác sĩ đang hoạt động thuộc chuyên khoa {selectedService.specialty_name || 'của dịch vụ này'}.</p>
+                        : serviceDoctors.map((doc) => (
+                  <div key={doc.id} className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex gap-4 items-start">
+                    <ImageWithFallback src={doc.avatar_url} alt={doc.full_name} className="h-16 w-16 shrink-0 rounded-full object-cover" fallback={<span className="font-bold text-xl">{doc.full_name?.charAt(0) || 'B'}</span>} />
                     <div className="text-xs space-y-1">
-                      <div className="font-bold text-slate-900 text-sm">{doc.name}</div>
-                      <div className="text-teal-700 font-semibold">{doc.specialty} • {doc.room}</div>
-                      <p className="text-slate-600 italic leading-relaxed pt-1">{doc.experience}</p>
-                      <div className="text-slate-400 pt-1 flex items-center gap-1">
-                        <Mail className="w-3.5 h-3.5 text-slate-400" />
-                        <span>{doc.email}</span>
-                      </div>
+                      <div className="font-semibold text-slate-900 text-sm">{doc.full_name}</div>
+                      <div className="text-teal-700">{doc.specialty_name || 'Chưa phân chuyên khoa'} • {doc.room_name || doc.room_number || 'Phòng khám'}</div>
+                      <div className="text-slate-500">Kinh nghiệm: {doc.experience_years || 0} năm</div>
+                      {doc.bio && <p className="text-slate-600 leading-relaxed pt-1">{doc.bio}</p>}
                     </div>
                   </div>
                 ))}
@@ -315,9 +311,8 @@ const HomePage = () => {
       <AIChatWidget />
 
       {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 py-8 px-6 text-center text-xs text-slate-500">
-        <p>&copy; 2025 - 2026 MediClinic - Hệ thống Quản lý Phòng khám tích hợp AI Agent.</p>
-        <p className="mt-1">Đồ án tốt nghiệp Đại học - Học viện Công nghệ Bưu chính Viễn thông (PTIT).</p>
+      <footer className="bg-white border-t border-slate-200 py-6 px-6 text-center text-sm text-slate-500">
+        <p>&copy; 2026 MediClinic. Thông tin lịch hẹn được xác nhận bởi phòng khám.</p>
       </footer>
     </div>
   );

@@ -1,7 +1,9 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { LogOut, User, Bell } from 'lucide-react';
+import { LogOut, User } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import ImageWithFallback from '../common/ImageWithFallback';
+import PatientNotificationBell from '../common/PatientNotificationBell';
 
 const Header = () => {
   const { user, logout } = useAuth();
@@ -34,20 +36,12 @@ const Header = () => {
       </div>
 
       <div className="flex items-center gap-4">
-        <button 
-          title="Thông báo"
-          className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors relative"
-        >
-          <Bell className="w-5 h-5" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-500 rounded-full"></span>
-        </button>
+        {user?.role === 'PATIENT' && <PatientNotificationBell />}
 
         <div className="h-8 w-px bg-slate-200"></div>
 
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center font-bold text-sm border border-sky-200">
-            {user?.full_name ? user.full_name.charAt(0).toUpperCase() : <User className="w-5 h-5" />}
-          </div>
+          <ImageWithFallback src={user?.avatar_url} alt={user?.full_name} className="w-9 h-9 rounded-full border border-sky-200 object-cover" fallback={<span className="font-bold text-sm">{user?.full_name ? user.full_name.charAt(0).toUpperCase() : <User className="w-5 h-5" />}</span>} />
           <div className="text-left hidden sm:block">
             <div className="text-sm font-semibold text-slate-800 leading-tight">{user?.full_name}</div>
             <div className="mt-0.5">{getRoleBadge(user?.role)}</div>

@@ -14,7 +14,9 @@ import {
   History,
   Bot,
   ShieldPlus,
-  Receipt
+  Receipt,
+  FileText,
+  ContactRound
 } from 'lucide-react';
 
 const Sidebar = () => {
@@ -29,21 +31,23 @@ const Sidebar = () => {
     { to: '/admin/services', icon: Stethoscope, label: 'Quản lý dịch vụ' },
     { to: '/admin/doctors', icon: UserCheck, label: 'Quản lý bác sĩ' },
     { to: '/admin/patients', icon: Users, label: 'Quản lý bệnh nhân' },
-    { to: '/admin/appointments', icon: Calendar, label: 'Quản lý lịch hẹn' },
+    { to: '/admin/appointments', icon: Calendar, label: 'Quản lý lịch hẹn khám' },
+    { to: '/admin/invoices', icon: FileText, label: 'Quản lý hóa đơn / Viện phí' },
+    { to: '/admin/dispensing', icon: Pill, label: 'Xác nhận cấp thuốc' },
   ];
 
   // Menu Doctor (Hình 3.8, 3.11)
   const doctorLinks = [
     { to: '/doctor/examination', icon: Stethoscope, label: 'Khám bệnh & Kê đơn' },
     { to: '/doctor/queue', icon: Users, label: 'Danh sách bệnh nhân' },
-    { to: '/doctor/schedule', icon: Clock, label: 'Cập nhật mẫu lịch khám' },
+    { to: '/doctor/schedule', icon: Clock, label: 'Đăng ký lịch làm việc' },
+    { to: '/doctor/profile', icon: ContactRound, label: 'Hồ sơ của tôi' },
   ];
 
   // Menu Patient (Hình 3.13 -> 3.18)
   const patientLinks = [
     { to: '/patient/booking', icon: Calendar, label: 'Đặt lịch khám' },
     { to: '/patient/history', icon: History, label: 'Lịch sử khám bệnh' },
-    { to: '/patient/ai-chat', icon: Bot, label: 'Trợ lý AI Triệu chứng', highlight: true },
   ];
 
   let currentLinks = [];

@@ -14,7 +14,7 @@ const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const from = location.state?.from?.pathname || null;
+  const from = location.state?.from || null;
 
   const getRoleHome = (role) => ({
     ADMIN: '/admin/dashboard',
@@ -36,7 +36,7 @@ const Login = () => {
           : role === 'PATIENT'
             ? pathname === '/' || isWithin('/patient')
             : false;
-      return allowed ? pathname : null;
+      return allowed ? `${pathname}${destination.search}` : null;
     } catch {
       return null;
     }
@@ -52,7 +52,10 @@ const Login = () => {
       const user = await login(phoneNumber, password);
       const roleHome = getRoleHome(user?.role);
       if (!roleHome) throw new Error('Tài khoản chưa có vai trò hợp lệ. Vui lòng liên hệ quản trị viên.');
-      const destination = getRoleSafePath(user.role, from) || roleHome;
+      const requestedPath = from?.pathname
+        ? `${from.pathname}${typeof from.search === 'string' ? from.search : ''}`
+        : null;
+      const destination = getRoleSafePath(user.role, requestedPath) || roleHome;
       navigate(destination, { replace: true });
     } catch (err) {
       setError(err.message || 'Số điện thoại hoặc mật khẩu không chính xác.');
@@ -61,20 +64,11 @@ const Login = () => {
     }
   };
 
-  // Nút đăng nhập thử nhanh demo
-  const handleQuickLogin = (demoAccount) => {
-    setPhoneNumber(demoAccount);
-    setPassword('password123');
-  };
+
 
   return (
-    <div 
-      className="min-h-screen relative flex items-center justify-center p-4 bg-cover bg-center"
-      style={{
-        backgroundImage: `linear-gradient(rgba(15, 23, 42, 0.45), rgba(15, 23, 42, 0.55)), url('https://images.unsplash.com/photo-1579684385127-1ef15d508118?w=1600&auto=format&fit=crop&q=80')`
-      }}
-    >
-      <div className="max-w-md w-full bg-white/95 backdrop-blur-md rounded-3xl shadow-2xl border border-white/20 p-8 space-y-6 animate-fadeIn">
+    <div className="min-h-screen relative flex items-center justify-center p-4 bg-slate-50">
+      <div className="max-w-md w-full bg-white rounded-xl shadow-sm border border-slate-200 p-8 space-y-6 animate-fadeIn">
         {/* Logo & Tiêu đề theo Hình 3.12 */}
         <div className="text-center space-y-2">
           <div className="w-12 h-12 bg-sky-600 rounded-2xl flex items-center justify-center text-white mx-auto shadow-md shadow-sky-600/30">
@@ -112,7 +106,6 @@ const Login = () => {
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-semibold text-slate-600">* Mật khẩu</label>
-              <a href="#" className="text-xs text-sky-600 hover:underline">Quên mật khẩu?</a>
             </div>
             <div className="relative">
               <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -140,40 +133,7 @@ const Login = () => {
           </button>
         </form>
 
-        {/* Nút Demo 1-chạm */}
-        <div className="pt-2 border-t border-slate-100">
-          <p className="text-[11px] font-bold text-slate-400 uppercase text-center mb-2">
-            Tài khoản dùng thử nhanh (Demo):
-          </p>
-          <div className="grid grid-cols-3 gap-2 text-xs">
-            <button
-              type="button"
-              onClick={() => handleQuickLogin('0987654321')}
-              className="py-2 px-1 bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 rounded-xl font-bold flex flex-col items-center"
-            >
-              <span>Admin</span>
-              <span className="text-[10px] text-purple-500 font-normal">0987654321</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleQuickLogin('0912345678')}
-              className="py-2 px-1 bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 rounded-xl font-bold flex flex-col items-center"
-            >
-              <span>Bác sĩ</span>
-              <span className="text-[10px] text-sky-500 font-normal">0912345678</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleQuickLogin('0912325678')}
-              className="py-2 px-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-xl font-bold flex flex-col items-center"
-            >
-              <span>Bệnh nhân</span>
-              <span className="text-[10px] text-emerald-500 font-normal">0912325678</span>
-            </button>
-          </div>
-        </div>
-
-        <p className="text-center text-xs text-slate-500">
+        <p className="text-center text-xs text-slate-500 pt-2 border-t border-slate-100">
           Bạn chưa có tài khoản?{' '}
           <Link to="/register" className="text-sky-600 font-bold hover:underline">
             Đăng ký

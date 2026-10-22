@@ -1,127 +1,76 @@
-# 🏥 MEDICLINIC - HỆ THỐNG QUẢN LÝ PHÒNG KHÁM & ĐẶT LỊCH CÓ TRỢ LÝ AI (GEMINI)
+# MediClinic
 
-> **Đồ án Tốt nghiệp / Dự án Chuyên ngành:** Xây dựng hệ thống quản lý phòng khám đa khoa, đặt lịch khám trực tuyến và trợ lý AI phân loại triệu chứng lâm sàng định hướng chuyên khoa.
+Ứng dụng quản lý phòng khám gồm React/Vite/TailwindCSS, Express, MySQL, JWT và Socket.IO.
 
----
+## Chức năng hiện có
 
-## 🛠 TECH STACK (CÔNG NGHỆ SỬ DỤNG)
+- Đăng ký bệnh nhân cần xác thực email OTP; đăng nhập không dùng tài khoản demo.
+- Danh mục bác sĩ, chuyên khoa và dịch vụ được tải từ API.
+- Bác sĩ đăng ký nhiều ca trong tuần; mỗi ca được chia thành khung khám `BOOKING_SLOT_MINUTES` (mặc định 30 phút). Khung giờ được khóa trong transaction; hủy lịch giải phóng đúng khung giờ và giữ lịch sử.
+- Bác sĩ chỉ mở lịch được phân công, ghi bệnh án, sinh hiệu, ICD-10, đơn thuốc và hướng dẫn tái khám.
+- Bác sĩ chọn nhiều ngày từ thứ Hai đến Chủ nhật, áp dụng ca trong database rồi điều chỉnh từng ngày; toàn bộ tuần được lưu trong một transaction theo giờ `Asia/Ho_Chi_Minh`.
+- Đơn thuốc lưu mã thuốc, số lượng, hướng dẫn và giá tại thời điểm kê. Cấp thuốc là thao tác riêng, kiểm tra tồn kho và ghi sổ biến động trong transaction.
+- Mỗi lịch có một hóa đơn. Hóa đơn giữ chi tiết khoản thu; có thể có nhiều giao dịch và theo dõi số tiền còn thiếu. Đơn thuốc chỉ ảnh hưởng tồn kho và hóa đơn khi ADMIN xác nhận cấp từ kho phòng khám.
+- Thu tiền mặt yêu cầu ADMIN và đối chiếu lại số còn thiếu trước khi ghi nhận. Chuyển khoản được xác nhận từ webhook SePay đã xác thực; giao dịch lặp được chống bằng mã nhà cung cấp. VNPay không còn được khởi tạo hoặc xử lý; bản ghi lịch sử được giữ nguyên.
+- Admin quản lý danh mục, bệnh nhân, bác sĩ và tài khoản bác sĩ. Danh mục đã dùng được ngừng hoạt động thay vì xóa lịch sử.
 
-- **Frontend:** ReactJS (Vite) + TailwindCSS + Axios Interceptor + React Router DOM v6 + Lucide React.
-- **Backend:** Node.js + Express.js + MySQL (`mysql2/promise`) + JWT + bcryptjs + Google Generative AI (Gemini API).
-- **Database:** MySQL / MariaDB với đầy đủ quan hệ RDBMS, Foreign Key ràng buộc toàn vẹn dữ liệu.
-- **Phân quyền người dùng (RBAC):** Gồm 3 Roles:
-  - `PATIENT` (Bệnh nhân)
-  - `DOCTOR` (Bác sĩ)
-  - `ADMIN` (Quản trị viên / Nhân sự phòng khám)
+## Chuẩn bị môi trường
 
----
+1. Cài Node.js 20+ và MySQL 8+ (đã build với Node.js 24.14.0 và Vite 6.4.3).
+2. Tạo database mới bằng `Backend/database/schema.sql`. File này chỉ dùng cho database mới và không chứa lệnh DROP hay tài khoản mẫu.
+3. Sao lưu database đang có trước khi nâng cấp. Ví dụ, `mysqldump -u <user> -p mediclinic_db > mediclinic_db-backup.sql`; lệnh sẽ hỏi mật khẩu.
+4. Sao chép `Backend/.env.example` thành `Backend/.env`, điền thông tin database và tạo `JWT_SECRET` ngẫu nhiên dài ít nhất 32 ký tự. Không commit `.env`.
+5. Tùy chọn, chỉ trên database phát triển mới: chạy `Backend/database/seed-dev.sql` để thêm ca làm, dịch vụ và danh mục minh họa. File seed không tạo tài khoản hoặc dữ liệu bệnh nhân.
+6. Cài dependency và áp dụng migration:
 
-## 📁 CẤU TRÚC THƯ MỤC DỰ ÁN
-
-```text
-mediclinic/
-├── Backend/
-│   ├── database/
-│   │   └── schema.sql                # Script tạo DB MySQL, 10 bảng & dữ liệu mẫu
-│   ├── src/
-│   │   ├── config/
-│   │   │   ├── db.js                 # Kết nối MySQL Connection Pool
-│   │   │   ├── jwt.js                # Helper tạo & giải mã JWT
-│   │   │   └── ai.js                 # Tích hợp Gemini AI & Fallback Rule-based
-│   │   ├── controllers/
-│   │   │   ├── authController.js     # Đăng ký, Đăng nhập, Profile
-│   │   │   ├── appointmentController.js # Nghiệp vụ đặt & cập nhật lịch hẹn
-│   │   │   ├── doctorController.js   # Tra cứu Bác sĩ & Chuyên khoa
-│   │   │   ├── medicalRecordController.js # Khám bệnh, kê đơn & bệnh án
-│   │   │   ├── invoiceController.js  # Hóa đơn & thu ngân viện phí
-│   │   │   └── aiController.js       # Phân loại triệu chứng bằng AI
-│   │   ├── middlewares/
-│   │   │   ├── verifyToken.js        # Xác thực Bearer JWT
-│   │   │   ├── checkRole.js          # RBAC (isAdmin, isDoctor, isPatient)
-│   │   │   └── errorHandler.js       # Xử lý lỗi tập trung & 404
-│   │   ├── routes/                   # Định tuyến API modular
-│   │   └── server.js                 # Entry point Backend Express
-│   ├── .env
-│   ├── .env.example
-│   └── package.json
-│
-└── Frontend/
-    ├── src/
-    │   ├── api/
-    │   │   └── axiosClient.js        # Axios đính kèm Bearer Token tự động
-    │   ├── context/
-    │   │   └── AuthContext.jsx       # Quản lý phiên đăng nhập & Role
-    │   ├── components/
-    │   │   ├── common/               # ProtectedRoute, Modal, StatusBadge
-    │   │   └── layout/               # Header, Sidebar, DashboardLayout
-    │   ├── pages/
-    │   │   ├── auth/                 # Login (có nút 1-click Demo), Register
-    │   │   ├── patient/              # AIChatSymptom, Booking, MedicalHistory
-    │   │   ├── doctor/               # PatientQueue, ExaminationPrescription, ScheduleRegistration
-    │   │   ├── admin/                # Dashboard, Appointment, Patient, Doctor, Service, Medicine, Invoice
-    │   │   ├── HomePage.jsx          # Trang chủ giới thiệu
-    │   │   ├── Unauthorized.jsx      # Báo lỗi 403
-    │   │   └── NotFound.jsx          # Báo lỗi 404
-    │   ├── App.jsx                   # Cấu hình Router & ProtectedRoute RBAC
-    │   ├── main.jsx
-    │   └── index.css
-    ├── tailwind.config.js
-    ├── vite.config.js
-    ├── .env
-    ├── .env.example
-    └── package.json
-```
-
----
-
-## 🗄 HỆ THỐNG CƠ SỞ DỮ LIỆU (10 BẢNG)
-
-1. `Users` (id, full_name, email, password_hash, phone, gender, role [PATIENT, DOCTOR, ADMIN])
-2. `Specialties` (id, name, description)
-3. `Rooms` (id, room_number, name, note)
-4. `Doctors` (id, user_id, specialty_id, room_id, bio, experience_years, consultation_fee)
-5. `Services` (id, name, price, description)
-6. `Medicines` (id, name, unit, price, stock_quantity, usage_guide)
-7. `Appointments` (id, patient_id, doctor_id, appointment_date, time_slot, status, initial_symptoms, ai_predicted_specialty)
-8. `MedicalRecords` (id, appointment_id, doctor_id, patient_id, diagnosis, advice, re_examination_date)
-9. `PrescriptionDetails` (id, record_id, medicine_id, quantity, dosage, usage_instruction)
-10. `Invoices` (id, appointment_id, patient_id, service_fee, medicine_fee, total_amount, payment_status, payment_method)
-
----
-
-## 🚀 HƯỚNG DẪN KHỞI CHẠY DỰ ÁN
-
-### Bước 1: Import Cơ Sở Dữ Liệu
-Mở file `Backend/database/schema.sql` trong **MySQL Workbench** và nhấn biểu tượng ⚡ để chạy.
-
----
-
-### Bước 2: Khởi chạy Backend Server
-1. Mở terminal tại thư mục `Backend`:
-   ```bash
-   cd d:\doanphongkham\Backend
+   ```powershell
+   cd Backend
+   npm install
+   npm run migrate
+   npm run create-admin
    npm run dev
    ```
-   *(Server API chạy tại: `http://localhost:5000`)*
 
----
+   `npm run create-admin` chỉ dùng khi database chưa có ADMIN. Tạo mật khẩu riêng, tối thiểu 12 ký tự.
 
-### Bước 3: Khởi chạy Frontend Client
-1. Mở terminal tại thư mục `Frontend`:
-   ```bash
-   cd d:\doanphongkham\Frontend
+7. Sao chép `Frontend/.env.example` thành `Frontend/.env`, kiểm tra `VITE_API_BASE_URL`, rồi chạy:
+
+   ```powershell
+   cd Frontend
+   npm install
    npm run dev
    ```
-   *(Giao diện ứng dụng chạy tại: `http://localhost:3000`)*
 
----
+   Khi frontend và backend chạy khác origin, đặt `VITE_UPLOADS_BASE_URL` là origin backend để tải ảnh trong `/uploads`.
 
-## 👥 TÀI KHOẢN TRẢI NGHIỆM NHANH (DEMO ACCOUNTS)
+## Migration và dữ liệu
 
-Trên trang Đăng nhập (`/login`), bạn có thể **click trực tiếp vào các nút Demo 1-chạm** để đăng nhập ngay mà không cần gõ phím:
+- Migration nằm trong `Backend/database/migrations/`, có tiền tố số, chạy theo thứ tự và được ghi vào `schema_migrations`. Server chỉ áp dụng phiên bản chưa chạy; lỗi migration dừng khởi động thay vì bị bỏ qua.
+- Migration hiện bổ sung xác minh OTP lưu bền vững, trạng thái hoạt động, liên kết thanh toán-hóa đơn, dòng hóa đơn, lịch sử tồn kho, ảnh bác sĩ, trạng thái cấp thuốc, thu ngân, thông báo và khung giờ khám con cho ca. Migration `005_appointment_time_slots.js` chỉ backfill ca chưa có lịch hẹn; lịch hẹn cũ giữ nguyên ngày/giờ, không bị chuyển. Ca legacy đang có lịch sẽ không mở khung mới chồng lên.
+- Đặt `BOOKING_SLOT_MINUTES=30` trong `Backend/.env` nếu muốn đổi độ dài slot; ca không chia hết theo giá trị cấu hình sẽ bị từ chối khi đăng ký và migration bỏ qua khi backfill, cần điều chỉnh lịch/giá trị cấu hình trước.
+- Trước khi cập nhật ứng dụng, dừng các phiên bản backend cũ, sao lưu đầy đủ MySQL và chạy `npm run migrate`. Không chạy `schema.sql` trên database đang có dữ liệu.
+- Ảnh tải lên nằm trong `Backend/uploads/`; cần sao lưu/khôi phục thư mục này cùng bản sao MySQL vì database chỉ lưu đường dẫn tương đối.
+- Tài khoản, lịch khám, bệnh án, đơn thuốc và hóa đơn phải được lưu giữ. Không xóa trực tiếp các bảng hoặc xóa lịch sử giao dịch.
 
-| Vai trò | Số điện thoại (Tài khoản) | Mật khẩu | Chức năng nổi bật |
-| :--- | :--- | :--- | :--- |
-| **Quản trị viên (ADMIN)** | `0987654321` *(hoặc admin@mediclinic.com)* | `password123` | Dashboard thống kê doanh thu, quản lý thuốc, chuyên khoa, phòng khám, bác sĩ, bệnh nhân |
-| **Bác sĩ (DOCTOR)** | `0912345678` *(hoặc doctor.an@mediclinic.com)* | `password123` | Khám bệnh, nhập 6 chỉ số sinh hiệu, chẩn đoán ICD-10, kê đơn thuốc, in phiếu khám bệnh |
-| **Bệnh nhân (PATIENT)** | `0912325678` *(hoặc nghia.nguyen@gmail.com)* | `password123` | Đặt lịch khám, thanh toán VNPAY, xem bệnh án, Chatbot AI tư vấn 24/7 |
+## Cấu hình tích hợp
+
+Tham khảo `Backend/.env.example`. Các biến email OTP, Gemini và ngân hàng/SePay chỉ cần đặt khi bật các tích hợp tương ứng. Gemini dùng `GEMINI_MODEL` (mặc định `gemini-3.8-flash` theo danh mục model hiện hành; có thể đổi theo quyền truy cập tài khoản). Khi Gemini không cấu hình hoặc gọi lỗi, kết quả được đánh dấu là gợi ý theo quy tắc dự phòng. Hệ thống không chấp nhận cấu hình payment mẫu; khi thiếu cấu hình, API trả trạng thái chưa sẵn sàng. CORS và Socket.IO chỉ cho phép các origin khai báo ở `FRONTEND_URL`.
+
+SePay webhook dùng API key trong header `Authorization: Apikey …`, chỉ nhận giao dịch tiền vào, kiểm tra tài khoản nhận, mã lịch/hóa đơn, số tiền và ID giao dịch duy nhất. Hãy giả lập webhook trên DB riêng trước khi nối tài khoản ngân hàng thật.
+
+Quick Tunnel Cloudflare chỉ dùng cho development; ai có URL đều có thể gọi backend đang được tunnel. Chỉ bật tunnel khi API đã được bảo vệ, giữ xác thực SePay, và dừng tiến trình tunnel khi xong. Tunnel tạm thời sẽ đổi URL sau lần chạy mới; cập nhật URL webhook trong SePay khi URL đổi. Không đưa URL tunnel vào `FRONTEND_URL` hoặc `VITE_API_BASE_URL`.
+
+## API và quyền truy cập
+
+Endpoint upload ảnh, hồ sơ bác sĩ, thanh toán và quyền truy cập được ghi tại [docs/API.md](docs/API.md).
+
+- `PATIENT`: lịch, bệnh án và hóa đơn của chính mình; chỉ hủy lịch PENDING của mình.
+- `DOCTOR`: lịch và nghiệp vụ bệnh nhân được phân công; không tự xác nhận hay đánh dấu hoàn tất lịch từ endpoint trạng thái.
+- `ADMIN`: quản trị và xác nhận khoản thu tiền mặt.
+- API được bảo vệ kiểm tra JWT và trạng thái tài khoản đang hoạt động ở mỗi request. Socket.IO yêu cầu JWT và chỉ phát sự kiện trong phòng tài khoản nhận.
+
+## Kiểm tra và giới hạn
+
+Các bước xác minh gần nhất và phần chưa chạy được ghi trong bàn giao của lần sửa. Chỉ chạy migration và webhook trên bản sao/database thử nghiệm trước; không cấu hình hoặc thử thanh toán thật trên tài khoản ngân hàng.
+
+Một số quy trình vẫn cần hoàn thiện trước khi coi đây là hệ thống vận hành phòng khám: quan hệ dịch vụ–chuyên khoa để lọc bác sĩ theo dịch vụ, lịch làm việc phía admin, tái khám tạo lịch liên kết tự động, bộ lọc khoảng thời gian dashboard, luồng hoàn tiền và đối soát hoàn tiền, pagination cho các bảng lớn, xuất/in chứng từ trên nhiều trình duyệt và đồng bộ toàn bộ màn hình quản trị theo thiết kế thống nhất.

@@ -74,7 +74,7 @@ const AIChatSymptom = () => {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-xs text-slate-400 flex items-center gap-1.5">
               <ShieldCheck className="w-4 h-4 text-teal-600" />
-              <span>Thông tin được bảo mật và chỉ dùng cho mục đích định hướng khám bệnh.</span>
+              <span>Nếu bật Gemini, mô tả có thể được gửi tới nhà cung cấp AI. Không nhập thông tin định danh. Đây không phải chẩn đoán.</span>
             </div>
 
             <button
@@ -113,8 +113,8 @@ const AIChatSymptom = () => {
                 <Bot className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="font-bold text-slate-900 text-base">Kết quả phân tích từ Trợ lý AI</h3>
-                <p className="text-xs text-slate-500">Được tạo tự động theo dữ liệu triệu chứng bạn cung cấp</p>
+                <h3 className="font-bold text-slate-900 text-base">{result.recommendation_source === 'AI' ? 'Gợi ý từ AI' : 'Gợi ý theo quy tắc dự phòng'}</h3>
+                <p className="text-xs text-slate-500">Tham khảo định hướng; không thay thế chẩn đoán trực tiếp</p>
               </div>
             </div>
             <div>
@@ -180,7 +180,7 @@ const AIChatSymptom = () => {
               onClick={handleBookWithSpecialty}
               className="px-6 py-3.5 bg-gradient-to-r from-sky-600 to-teal-600 text-white font-semibold rounded-xl hover:from-sky-700 hover:to-teal-700 transition flex items-center gap-2 shadow-lg shadow-sky-600/20"
             >
-              <span>Đặt lịch khám chuyên khoa {result.predicted_specialty}</span>
+              <span>{result.predicted_specialty ? `Đặt lịch khám chuyên khoa ${result.predicted_specialty}` : 'Xem danh sách bác sĩ để tự chọn'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>

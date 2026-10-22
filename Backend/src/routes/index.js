@@ -7,6 +7,9 @@ const appointmentRoutes = require('./appointmentRoutes');
 const doctorRoutes = require('./doctorRoutes');
 const medicalRecordRoutes = require('./medicalRecordRoutes');
 const invoiceRoutes = require('./invoiceRoutes');
+const paymentRoutes = require('./paymentRoutes');
+const adminRoutes = require('./adminRoutes');
+const notificationRoutes = require('./notificationRoutes');
 
 router.use('/auth', authRoutes);
 router.use('/ai', aiRoutes);
@@ -14,6 +17,9 @@ router.use('/appointments', appointmentRoutes);
 router.use('/doctors', doctorRoutes);
 router.use('/medical-records', medicalRecordRoutes);
 router.use('/invoices', invoiceRoutes);
+router.use('/payments', paymentRoutes);
+router.use('/admin', adminRoutes);
+router.use('/notifications', notificationRoutes);
 
 // Health check endpoint
 router.get('/health', (req, res) => {

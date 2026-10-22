@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import axiosClient from '../../api/axiosClient';
 import StatusBadge from '../../components/common/StatusBadge';
-import { Calendar, Search, Filter, RefreshCw, Check, X } from 'lucide-react';
+import PaymentModal from '../../components/common/PaymentModal';
+import { socket } from '../../api/socket';
+import { Calendar, Search, Filter, RefreshCw, Check, X, QrCode } from 'lucide-react';
 
 const AppointmentMgmt = () => {
   const [appointments, setAppointments] = useState([]);
@@ -9,8 +11,22 @@ const AppointmentMgmt = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
 
+  // State cho Modal thanh toán
+  const [selectedApp, setSelectedApp] = useState(null);
+  const [isPaymentOpen, setIsPaymentOpen] = useState(false);
+
   useEffect(() => {
     fetchAppointments();
+
+    const handlePaymentCompleted = (data) => {
+      console.log('⚡ Socket payment_updated in AppointmentMgmt:', data);
+      fetchAppointments();
+    };
+
+    socket.on('payment_updated', handlePaymentCompleted);
+    return () => {
+      socket.off('payment_updated', handlePaymentCompleted);
+    };
   }, []);
 
   const fetchAppointments = async () => {
@@ -36,6 +52,11 @@ const AppointmentMgmt = () => {
     }
   };
 
+  const handleOpenPayment = (app) => {
+    setSelectedApp(app);
+    setIsPaymentOpen(true);
+  };
+
   const filtered = appointments.filter(app => {
     const matchStatus = filterStatus === 'ALL' || app.status === filterStatus;
     const matchSearch = app.patient_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -44,11 +65,11 @@ const AppointmentMgmt = () => {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 font-sans">
       <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Quản Lý Lịch Hẹn Khám Toàn Hệ Thống</h2>
-          <p className="text-sm text-slate-500 mt-1">Duyệt, điều phối và theo dõi lịch khám của tất cả bệnh nhân.</p>
+          <p className="text-sm text-slate-500 mt-1">Duyệt, điều phối, thu ngân và theo dõi lịch khám của tất cả bệnh nhân.</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -101,8 +122,8 @@ const AppointmentMgmt = () => {
                 <th className="py-4 px-6">Bệnh nhân</th>
                 <th className="py-4 px-6">Bác sĩ & Phòng khám</th>
                 <th className="py-4 px-6">Ngày & Giờ khám</th>
-                <th className="py-4 px-6">Chuyên khoa đề xuất (AI)</th>
-                <th className="py-4 px-6">Trạng thái</th>
+                <th className="py-4 px-6">Trạng thái khám</th>
+                <th className="py-4 px-6">Thanh toán</th>
                 <th className="py-4 px-6 text-center">Hành động</th>
               </tr>
             </thead>
@@ -132,12 +153,23 @@ const AppointmentMgmt = () => {
                       <div className="text-xs text-slate-400">{app.time_slot}</div>
                     </td>
                     <td className="py-4 px-6">
-                      <span className="text-xs font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200">
-                        {app.ai_predicted_specialty || 'Không có'}
-                      </span>
+                      <StatusBadge status={app.status} type="appointment" />
                     </td>
                     <td className="py-4 px-6">
-                      <StatusBadge status={app.status} type="appointment" />
+                      {app.payment_status === 'PAID' ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Đã thanh toán</span>
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleOpenPayment(app)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1 bg-sky-50 text-sky-700 hover:bg-sky-100 rounded-lg text-xs font-bold transition border border-sky-200 shadow-sm"
+                        >
+                          <QrCode className="w-3.5 h-3.5" />
+                          <span>Thu phí / QR</span>
+                        </button>
+                      )}
                     </td>
                     <td className="py-4 px-6 text-center">
                       <div className="flex items-center justify-center gap-1.5">
@@ -168,6 +200,18 @@ const AppointmentMgmt = () => {
           </table>
         </div>
       </div>
+
+      {/* Modal thanh toán VietQR / Cash */}
+      {selectedApp && (
+        <PaymentModal
+          isOpen={isPaymentOpen}
+          onClose={() => setIsPaymentOpen(false)}
+          appointmentId={selectedApp.id}
+          patientName={selectedApp.patient_name}
+          amount={300000}
+          onSuccess={() => fetchAppointments()}
+        />
+      )}
     </div>
   );
 };
