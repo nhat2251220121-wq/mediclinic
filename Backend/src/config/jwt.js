@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'mediclinic_default_secret_jwt_key';
+const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 
 /**
@@ -9,6 +9,7 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
  * @returns {string} token
  */
 const generateToken = (payload) => {
+    if (!JWT_SECRET || JWT_SECRET.length < 32) throw new Error('JWT_SECRET must be configured with at least 32 characters.');
     return jwt.sign(payload, JWT_SECRET, {
         expiresIn: JWT_EXPIRES_IN
     });
@@ -20,6 +21,7 @@ const generateToken = (payload) => {
  * @returns {Object} decoded payload
  */
 const verifyJwtToken = (token) => {
+    if (!JWT_SECRET || JWT_SECRET.length < 32) throw new Error('JWT_SECRET is not configured.');
     return jwt.verify(token, JWT_SECRET);
 };
 

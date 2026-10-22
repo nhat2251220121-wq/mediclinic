@@ -21,6 +21,10 @@ axiosClient.interceptors.request.use(
       config.__mediclinicToken = token;
       config.headers.Authorization = `Bearer ${token}`;
     }
+    if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+      // Let the browser add the multipart boundary; the client default is JSON.
+      config.headers.delete('Content-Type');
+    }
     return config;
   },
   (error) => {

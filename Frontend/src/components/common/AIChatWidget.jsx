@@ -11,7 +11,7 @@ const AIChatWidget = () => {
     {
       id: 1,
       sender: 'ai',
-      text: 'Xin chào! 👋 Chào mừng bạn đến với phòng khám MediClinic. Tôi là trợ lý AI thông minh, luôn sẵn sàng hỗ trợ tư vấn dịch vụ, kiểm tra lịch khám, giá thuốc hoặc giải đáp thắc mắc 24/7!',
+      text: 'Xin chào. Tôi có thể hỗ trợ định hướng chuyên khoa từ triệu chứng và đưa bạn tới trang đặt lịch. Không nhập thông tin định danh; nếu bật Gemini, nội dung có thể được gửi tới nhà cung cấp AI. Gợi ý không thay thế chẩn đoán của nhân viên y tế.',
       time: 'Vừa xong'
     }
   ]);
@@ -58,7 +58,7 @@ const AIChatWidget = () => {
             {
               id: Date.now() + 1,
               sender: 'ai',
-              text: '🔒 Bạn cần phải đăng nhập để tra cứu thông tin cá nhân về lịch hẹn, đơn thuốc hay kết quả khám. Vui lòng đăng nhập để tiếp tục, Nick sẵn sàng hỗ trợ bạn!',
+              text: 'Bạn cần đăng nhập để xem lịch hẹn cá nhân.',
               action: { text: 'Đi đến trang Đăng nhập', link: '/login' },
               time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             }
@@ -70,14 +70,16 @@ const AIChatWidget = () => {
         // Đã đăng nhập -> Lấy danh sách lịch hẹn từ backend
         try {
           const res = await axiosClient.get('/appointments');
-          if (res.success && res.data.length > 0) {
-            const latest = res.data[0];
+          const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+          const upcoming = (res.data || []).filter((appointment) => appointment.appointment_date >= today && ['PENDING', 'CONFIRMED'].includes(appointment.status));
+          if (res.success && upcoming.length > 0) {
+            const latest = upcoming[0];
             setMessages((prev) => [
               ...prev,
               {
                 id: Date.now() + 1,
                 sender: 'ai',
-                text: `📅 Bạn đang có cuộc hẹn sắp tới:\n\n• Ngày khám: ${latest.appointment_date}\n• Giờ khám: ${latest.time_slot}\n• Bác sĩ: ${latest.doctor_name} (${latest.specialty_name || 'Đa khoa'})\n• Phòng khám: ${latest.room_name || 'P.101'}\n• Trạng thái: ${latest.status === 'CONFIRMED' ? 'Đã xác nhận' : 'Đang chờ duyệt'}`,
+                text: `Lịch hẹn sắp tới của bạn:\n\n• Ngày khám: ${latest.appointment_date}\n• Giờ khám: ${latest.time_slot}\n• Bác sĩ: ${latest.doctor_name}${latest.specialty_name ? ` (${latest.specialty_name})` : ''}${latest.room_name ? `\n• Phòng khám: ${latest.room_name}` : ''}\n• Trạng thái: ${latest.status === 'CONFIRMED' ? 'Đã xác nhận' : 'Đang chờ duyệt'}`,
                 action: { text: 'Xem toàn bộ lịch sử khám', link: '/patient/history' },
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
               }
@@ -88,7 +90,7 @@ const AIChatWidget = () => {
               {
                 id: Date.now() + 1,
                 sender: 'ai',
-                text: 'Hiện tại bạn chưa có lịch hẹn khám nào sắp tới. Bạn có muốn đặt lịch hẹn với bác sĩ chuyên khoa ngay bây giờ không?',
+                text: 'Bạn chưa có lịch hẹn sắp tới đang chờ hoặc đã xác nhận.',
                 action: { text: 'Đặt lịch khám ngay', link: '/patient/booking' },
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
               }
@@ -97,31 +99,17 @@ const AIChatWidget = () => {
           setLoading(false);
           return;
         } catch (err) {
-          console.error(err);
+          setMessages((prev) => [...prev, { id: Date.now() + 1, sender: 'ai', text: err.message || 'Không tải được lịch hẹn lúc này.', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
+          setLoading(false);
+          return;
         }
-      }
-
-      // Kiểm tra câu hỏi về lịch làm việc bác sĩ
-      if (lower.includes('bác sĩ') && (lower.includes('lịch') || lower.includes('làm việc') || lower.includes('ca'))) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: Date.now() + 1,
-            sender: 'ai',
-            text: `🗓️ LỊCH LÀM VIỆC CỦA BÁC SĨ (Hôm nay):\n\n• Ca 1: 08:00 - 12:00 | Sức chứa: 10 bệnh nhân\n• Ca 2: 13:30 - 17:00 | Sức chứa: 10 bệnh nhân\n\nBạn có thể chọn đặt lịch trực tiếp trên cổng hệ thống để giữ chỗ!`,
-            action: { text: 'Xem danh sách Bác sĩ & Đặt lịch', link: '/patient/booking' },
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          }
-        ]);
-        setLoading(false);
-        return;
       }
 
       // Hỏi về triệu chứng hoặc dịch vụ y tế -> Gọi API AI phân loại triệu chứng
       const res = await axiosClient.post('/ai/classify-symptom', { symptoms: userText });
       if (res.success && res.data) {
         const d = res.data;
-        let reply = `🔍 KẾT QUẢ TƯ VẤN TỪ TRỢ LÝ AI:\n\n• Chuyên khoa đề xuất: ${d.predicted_specialty}\n• Mức độ khẩn cấp: ${d.urgency_text || d.urgency_level}\n\n💡 Lời khuyên sơ bộ: ${d.initial_advice}`;
+        let reply = `${d.recommendation_source === 'AI' ? 'Gợi ý từ AI' : 'Gợi ý theo quy tắc dự phòng'}:\n\n• Chuyên khoa đề xuất: ${d.predicted_specialty || 'Chưa tìm được chuyên khoa phù hợp'}\n• Mức độ khẩn cấp: ${d.urgency_text || d.urgency_level}\n\nLời khuyên: ${d.initial_advice}\n\n${d.disclaimer || 'Gợi ý này không thay thế chẩn đoán y khoa.'}`;
         if (d.possible_conditions && d.possible_conditions.length > 0) {
           reply += `\n\n📌 Các khả năng liên quan: ${d.possible_conditions.join(', ')}`;
         }
@@ -132,11 +120,11 @@ const AIChatWidget = () => {
             id: Date.now() + 1,
             sender: 'ai',
             text: reply,
-            action: {
+            ...(d.predicted_specialty ? { action: {
               text: `Đặt lịch khám chuyên khoa ${d.predicted_specialty}`,
               link: '/patient/booking',
               state: { suggestedSpecialty: d.predicted_specialty, initialSymptoms: userText }
-            },
+            } } : {}),
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           }
         ]);
@@ -146,7 +134,7 @@ const AIChatWidget = () => {
           {
             id: Date.now() + 1,
             sender: 'ai',
-            text: 'Tôi đã tiếp nhận thông tin từ bạn. Để được hỗ trợ chuyên sâu, bạn có thể đặt lịch khám trực tiếp với bác sĩ chuyên khoa hoặc gọi tổng đài phòng khám 0901234567 nhé!',
+            text: 'Hiện chưa có gợi ý phù hợp từ danh mục. Bạn có thể xem bác sĩ và lịch còn trống trên trang đặt lịch.',
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           }
         ]);
@@ -172,21 +160,25 @@ const AIChatWidget = () => {
 
   return (
     <div className="fixed bottom-6 right-6 z-50">
-      {/* Nút bấm mở Chatbot nổi (Hình 3.40) */}
+      {/* Nút bấm mở Chatbot nổi - Icon tròn với tooltip */}
       {!isOpen && (
-        <button
-          onClick={() => setIsOpen(true)}
-          className="flex items-center gap-3 bg-gradient-to-r from-sky-600 to-teal-500 hover:from-sky-700 hover:to-teal-600 text-white px-5 py-3.5 rounded-full shadow-2xl hover:shadow-sky-500/50 transition-all transform hover:scale-105 group"
-        >
-          <div className="relative">
-            <Bot className="w-6 h-6 animate-pulse" />
-            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-white"></span>
+        <div className="relative group">
+          <button
+            onClick={() => setIsOpen(true)}
+            className="w-14 h-14 bg-gradient-to-br from-sky-600 to-teal-500 hover:from-sky-700 hover:to-teal-600 text-white rounded-full shadow-2xl hover:shadow-sky-500/50 transition-all transform hover:scale-110 flex items-center justify-center"
+            aria-label="Tư vấn triệu chứng cùng AI"
+          >
+            <div className="relative">
+              <Bot className="w-7 h-7" />
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-white animate-pulse"></span>
+            </div>
+          </button>
+          {/* Tooltip */}
+          <div className="absolute bottom-full right-0 mb-2 px-3 py-1.5 bg-slate-800 text-white text-xs font-semibold rounded-xl shadow-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none">
+            🤖 Tư vấn triệu chứng cùng AI
+            <div className="absolute top-full right-4 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-slate-800"></div>
           </div>
-          <div className="text-left hidden sm:block">
-            <div className="text-xs font-bold leading-tight">Trợ lý AI MediClinic</div>
-            <div className="text-[10px] text-sky-100">Luôn sẵn sàng hỗ trợ 24/7</div>
-          </div>
-        </button>
+        </div>
       )}
 
       {/* Cửa sổ Chatbot y hệt Hình 3.40 (Trang 101-104) */}

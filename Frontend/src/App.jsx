@@ -5,6 +5,7 @@ import { AuthProvider } from './context/AuthContext';
 // Common & Layout
 import ProtectedRoute from './components/common/ProtectedRoute';
 import DashboardLayout from './components/layout/DashboardLayout';
+import PatientLayout from './components/layout/PatientLayout';
 import HomePage from './pages/HomePage';
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
@@ -20,6 +21,7 @@ import AIChatSymptom from './pages/patient/AIChatSymptom';
 import ExaminationPrescription from './pages/doctor/ExaminationPrescription';
 import PatientQueue from './pages/doctor/PatientQueue';
 import ScheduleRegistration from './pages/doctor/ScheduleRegistration';
+import DoctorProfile from './pages/doctor/DoctorProfile';
 
 // Admin Pages (Khớp Hình 3.1 -> 3.7)
 import Dashboard from './pages/admin/Dashboard';
@@ -30,6 +32,8 @@ import ServiceMgmt from './pages/admin/ServiceMgmt';
 import DoctorMgmt from './pages/admin/DoctorMgmt';
 import PatientMgmt from './pages/admin/PatientMgmt';
 import AppointmentMgmt from './pages/admin/AppointmentMgmt';
+import InvoiceMgmt from './pages/admin/InvoiceMgmt';
+import DispensingMgmt from './pages/admin/DispensingMgmt';
 
 function App() {
   return (
@@ -46,11 +50,11 @@ function App() {
           {/* PHÂN HỆ BỆNH NHÂN (PATIENT)                               */}
           {/* ======================================================== */}
           <Route element={<ProtectedRoute allowedRoles={['PATIENT']} />}>
-            <Route path="/patient" element={<DashboardLayout />}>
+            <Route path="/patient" element={<PatientLayout />}>
               <Route index element={<Navigate to="/patient/booking" replace />} />
               <Route path="booking" element={<Booking />} />
               <Route path="history" element={<MedicalHistory />} />
-              <Route path="ai-chat" element={<AIChatSymptom />} />
+              <Route path="ai-chat" element={<Navigate to="/patient/booking" replace />} />
             </Route>
           </Route>
 
@@ -59,10 +63,11 @@ function App() {
           {/* ======================================================== */}
           <Route element={<ProtectedRoute allowedRoles={['DOCTOR']} />}>
             <Route path="/doctor" element={<DashboardLayout />}>
-              <Route index element={<Navigate to="/doctor/examination" replace />} />
+              <Route index element={<Navigate to="/doctor/queue" replace />} />
               <Route path="examination" element={<ExaminationPrescription />} />
               <Route path="queue" element={<PatientQueue />} />
               <Route path="schedule" element={<ScheduleRegistration />} />
+              <Route path="profile" element={<DoctorProfile />} />
             </Route>
           </Route>
 
@@ -80,6 +85,8 @@ function App() {
               <Route path="doctors" element={<DoctorMgmt />} />
               <Route path="patients" element={<PatientMgmt />} />
               <Route path="appointments" element={<AppointmentMgmt />} />
+              <Route path="invoices" element={<InvoiceMgmt />} />
+              <Route path="dispensing" element={<DispensingMgmt />} />
             </Route>
           </Route>
 
