@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import axiosClient from '../../api/axiosClient';
 import { socket } from '../../api/socket';
+import { useAuth } from '../../context/AuthContext';
 import { QrCode, Banknote, Copy, CheckCircle2, X, Loader2, AlertCircle, Check, RefreshCw } from 'lucide-react';
 
 const money = (value) => `${Number(value || 0).toLocaleString('vi-VN')} ₫`;
 
 const PaymentModal = ({ isOpen, onClose, appointmentId, patientName, amount, onSuccess }) => {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('QR');
   const [copiedField, setCopiedField] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
@@ -15,6 +17,7 @@ const PaymentModal = ({ isOpen, onClose, appointmentId, patientName, amount, onS
   const [qrLoading, setQrLoading] = useState(false);
   const [qrError, setQrError] = useState('');
   const [statusError, setStatusError] = useState('');
+  const [cashSubmitting, setCashSubmitting] = useState(false);
   const qrSequence = useRef(0);
   const qrDataRef = useRef(null);
   const reloadQrRef = useRef(null);
@@ -31,13 +34,13 @@ const PaymentModal = ({ isOpen, onClose, appointmentId, patientName, amount, onS
     successHandled.current = false;
     let pollId;
     setActiveTab('QR'); setCopiedField(''); setIsSuccess(false); setSuccessInfo(null);
-    setSummary(null); setQrData(null); qrDataRef.current = null; setQrError(''); setStatusError('');
+    setSummary(null); setQrData(null); qrDataRef.current = null; setQrError(''); setStatusError(''); setCashSubmitting(false);
 
     const loadQr = async () => {
       const request = ++qrSequence.current;
       setQrLoading(true); setQrError('');
       try {
-        const result = await axiosClient.get(`/payments/create-qr?appointmentId=${appointmentId}`);
+        const result = await axiosClient.post('/payments/create-qr', { appointmentId });
         if (!active || request !== qrSequence.current) return;
         qrDataRef.current = result.data;
         setQrData(result.data);
@@ -141,7 +144,7 @@ const PaymentModal = ({ isOpen, onClose, appointmentId, patientName, amount, onS
           </div>}
           <p className="flex items-center gap-2 rounded-lg bg-sky-50 p-3 text-xs text-sky-800"><Loader2 className="h-4 w-4 animate-spin" />Trạng thái được xác minh từ máy chủ, qua socket hoặc kiểm tra định kỳ.</p>
           {statusError && <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{statusError} Nếu bạn đã chuyển tiền, không chuyển lại; giữ biên nhận và liên hệ phòng khám để đối soát.</div>}
-          <div className="flex flex-wrap gap-2"><button type="button" disabled={qrLoading || Number(dueAmount) <= 0} onClick={() => reloadQrRef.current?.()} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50"><RefreshCw className="mr-1 inline h-4 w-4" />Tải QR lại</button><button type="button" onClick={() => { setStatusError(''); axiosClient.get(`/payments/status/${appointmentId}`).then((result) => { setSummary(result.invoice); if (result.isPaid) { setIsSuccess(true); setSuccessInfo({ paymentMethod: result.invoice?.payment_method, paidAmount: result.invoice?.paid_amount, totalAmount: result.invoice?.total_amount }); if (!successHandled.current) { successHandled.current = true; onSuccessRef.current?.(); } } }).catch((error) => setStatusError(error.message || 'Không kiểm tra được trạng thái thanh toán.')); }} className="rounded-lg border px-3 py-2 text-sm"><RefreshCw className="mr-1 inline h-4 w-4" />Kiểm tra thanh toán</button></div>
+          <div className="flex flex-wrap gap-2"><button type="button" disabled={qrLoading || Number(dueAmount) <= 0} onClick={() => reloadQrRef.current?.()} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50"><RefreshCw className="mr-1 inline h-4 w-4" />Tải QR lại</button><button type="button" onClick={() => { setStatusError(''); axiosClient.get(`/payments/status/${appointmentId}`).then((result) => { setSummary(result.invoice); if (result.isPaid) { setIsSuccess(true); setSuccessInfo({ paymentMethod: result.invoice?.payment_method, paidAmount: result.invoice?.paid_amount, totalAmount: result.invoice?.total_amount }); if (!successHandled.current) { successHandled.current = true; if (pollId) window.clearInterval(pollId); socket.off('payment_updated', handlePaymentUpdated); onSuccessRef.current?.(); } } }).catch((error) => setStatusError(error.message || 'Không kiểm tra được trạng thái thanh toán.')); }} className="rounded-lg border px-3 py-2 text-sm"><RefreshCw className="mr-1 inline h-4 w-4" />Kiểm tra thanh toán</button></div>
         </div>}
 
         {activeTab === 'CASH' && <div className="space-y-4 rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-center">
@@ -149,6 +152,8 @@ const PaymentModal = ({ isOpen, onClose, appointmentId, patientName, amount, onS
           <h4 className="font-bold text-emerald-950">Thanh toán tiền mặt tại quầy</h4>
           <p className="text-sm text-emerald-900">Số còn phải thu theo hóa đơn: <strong>{money(dueAmount)}</strong>.</p>
           <p className="text-xs text-emerald-800">Đóng cửa sổ này không xác nhận đã trả tiền. Nhân viên admin chỉ ghi nhận sau khi thực nhận tiền mặt tại quầy.</p>
+          {summary?.cash_requested_at ? <p role="status" className="rounded-lg bg-white p-3 text-sm font-semibold text-emerald-800">Đã gửi yêu cầu · đang chờ xác nhận tại quầy.</p> : user?.role === 'PATIENT' ? <button type="button" disabled={cashSubmitting || Number(dueAmount) <= 0 || !(summary?.id || qrData?.invoiceId)} onClick={async () => { setCashSubmitting(true); try { await axiosClient.post(`/invoices/${summary?.id || qrData?.invoiceId}/cash-request`); setStatusError(''); const status = await axiosClient.get(`/payments/status/${appointmentId}`); setSummary(status.invoice); } catch (error) { setStatusError(error.message || 'Không gửi được yêu cầu tiền mặt.'); } finally { setCashSubmitting(false); } }} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{cashSubmitting ? 'Đang gửi…' : 'Chọn tiền mặt tại quầy'}</button> : <p className="rounded-lg bg-white p-3 text-sm text-emerald-800">Admin xác nhận khoản tiền mặt đã thực nhận tại trang quản lý hóa đơn.</p>}
+          {statusError && <div role="alert" className="rounded-lg bg-white p-3 text-sm text-amber-900">{statusError}</div>}
           <button type="button" onClick={() => onCloseRef.current?.()} className="rounded-lg border border-emerald-300 bg-white px-4 py-2 text-sm font-semibold text-emerald-800">Đóng</button>
         </div>}
       </>}

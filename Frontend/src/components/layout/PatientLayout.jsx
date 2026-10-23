@@ -1,8 +1,9 @@
 import React from 'react';
 import { Link, useNavigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { ShieldPlus, Bot, ChevronDown, User, History, LogOut, Calendar } from 'lucide-react';
+import { ShieldPlus, Bot, ChevronDown, User, History, LogOut } from 'lucide-react';
 import AIChatWidget from '../common/AIChatWidget';
+import PatientNotificationBell from '../common/PatientNotificationBell';
 
 const PatientLayout = () => {
   const { user, logout } = useAuth();
@@ -37,6 +38,8 @@ const PatientLayout = () => {
           </nav>
 
           {/* User Dropdown */}
+          <div className="flex items-center gap-2">
+            <PatientNotificationBell />
           <div className="relative">
             <button
               onClick={() => setDropdownOpen(!dropdownOpen)}
@@ -65,14 +68,6 @@ const PatientLayout = () => {
                     <History className="w-4 h-4 text-sky-600" />
                     <span>Lịch sử khám bệnh</span>
                   </Link>
-                  <Link
-                    to="/patient/booking"
-                    onClick={() => setDropdownOpen(false)}
-                    className="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition font-medium"
-                  >
-                    <Calendar className="w-4 h-4 text-teal-600" />
-                    <span>Đặt lịch khám mới</span>
-                  </Link>
                   <div className="border-t border-slate-100 mt-1 pt-1">
                     <button
                       onClick={handleLogout}
@@ -85,6 +80,7 @@ const PatientLayout = () => {
                 </div>
               </>
             )}
+          </div>
           </div>
         </div>
       </header>

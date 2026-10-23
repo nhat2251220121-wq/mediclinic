@@ -5,6 +5,7 @@ import axiosClient from '../api/axiosClient';
 import ImageWithFallback from '../components/common/ImageWithFallback';
 import { ShieldPlus, Calendar, Bot, History, ChevronDown, LogOut, User, X } from 'lucide-react';
 import AIChatWidget from '../components/common/AIChatWidget';
+import PatientNotificationBell from '../components/common/PatientNotificationBell';
 
 const HomePage = () => {
   const { isAuthenticated, user, logout } = useAuth();
@@ -92,6 +93,8 @@ const HomePage = () => {
           <div className="flex items-center gap-3">
             {isAuthenticated ? (
               /* ===== DROPDOWN USER MENU ===== */
+              <>
+              {user?.role === 'PATIENT' && <PatientNotificationBell />}
               <div className="relative">
                 <button
                   onClick={() => setDropdownOpen(!dropdownOpen)}
@@ -120,14 +123,6 @@ const HomePage = () => {
                         <History className="w-4 h-4 text-sky-600" />
                         <span>Lịch sử khám bệnh</span>
                       </Link>
-                      <Link
-                        to="/patient/booking"
-                        onClick={() => setDropdownOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition font-medium"
-                      >
-                        <Calendar className="w-4 h-4 text-teal-600" />
-                        <span>Đặt lịch khám mới</span>
-                      </Link>
                       <div className="border-t border-slate-100 mt-1 pt-1">
                         <button
                           onClick={handleLogout}
@@ -141,6 +136,7 @@ const HomePage = () => {
                   </>
                 )}
               </div>
+              </>
             ) : (
               <>
                 <Link

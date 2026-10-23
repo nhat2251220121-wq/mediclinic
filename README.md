@@ -9,8 +9,9 @@
 - Bác sĩ đăng ký nhiều ca trong tuần; mỗi ca được chia thành khung khám `BOOKING_SLOT_MINUTES` (mặc định 30 phút). Khung giờ được khóa trong transaction; hủy lịch giải phóng đúng khung giờ và giữ lịch sử.
 - Bác sĩ chỉ mở lịch được phân công, ghi bệnh án, sinh hiệu, ICD-10, đơn thuốc và hướng dẫn tái khám.
 - Bác sĩ chọn nhiều ngày từ thứ Hai đến Chủ nhật, áp dụng ca trong database rồi điều chỉnh từng ngày; toàn bộ tuần được lưu trong một transaction theo giờ `Asia/Ho_Chi_Minh`.
-- Đơn thuốc lưu mã thuốc, số lượng, hướng dẫn và giá tại thời điểm kê. Cấp thuốc là thao tác riêng, kiểm tra tồn kho và ghi sổ biến động trong transaction.
-- Mỗi lịch có một hóa đơn. Hóa đơn giữ chi tiết khoản thu; có thể có nhiều giao dịch và theo dõi số tiền còn thiếu. Đơn thuốc chỉ ảnh hưởng tồn kho và hóa đơn khi ADMIN xác nhận cấp từ kho phòng khám.
+- Khi bác sĩ lưu bệnh án, backend kiểm tra giá thuốc trong danh mục, lưu đơn giá snapshot và lập từng dòng thuốc trên hóa đơn trong cùng transaction. Nếu thuốc chưa có giá dương hợp lệ, yêu cầu lưu bị từ chối; hệ thống không tự đặt giá.
+- Giao thuốc là bước riêng chỉ cập nhật tồn kho. Hóa đơn phải được thanh toán đủ trước khi trừ kho; các đơn cũ chưa lập phí được xử lý một lần từ giá snapshot đã lưu, còn snapshot bằng 0 cần admin kiểm tra.
+- Mỗi lịch có một hóa đơn với dòng phí dịch vụ và thuốc, nhiều giao dịch, tổng đã thu và số còn thiếu. Tiền mặt bệnh nhân chọn được lưu là đang chờ tại quầy; chỉ ADMIN xác nhận tiền thực nhận mới tạo giao dịch PAID. QR chỉ được xác nhận từ webhook SePay đã xác thực.
 - Thu tiền mặt yêu cầu ADMIN và đối chiếu lại số còn thiếu trước khi ghi nhận. Chuyển khoản được xác nhận từ webhook SePay đã xác thực; giao dịch lặp được chống bằng mã nhà cung cấp. VNPay không còn được khởi tạo hoặc xử lý; bản ghi lịch sử được giữ nguyên.
 - Admin quản lý danh mục, bệnh nhân, bác sĩ và tài khoản bác sĩ. Danh mục đã dùng được ngừng hoạt động thay vì xóa lịch sử.
 
@@ -30,6 +31,8 @@
    npm run create-admin
    npm run dev
    ```
+
+Migration `011_invoice_prescription_billing_and_cash_request.js` bổ sung trạng thái đã/chưa lập phí cho từng đơn thuốc và thời điểm bệnh nhân yêu cầu tiền mặt. Đây là migration cộng thêm, không backfill hay sửa hóa đơn/giao dịch cũ. Trước khi chạy trên bất kỳ database đã có dữ liệu nào, hãy sao lưu và áp dụng trước trên database thử riêng; các đơn thuốc đang chờ cũ sẽ mặc định `UNBILLED` và chỉ được lập phí một lần từ đơn giá snapshot. Không chạy migration trong phiên làm việc này.
 
    `npm run create-admin` chỉ dùng khi database chưa có ADMIN. Tạo mật khẩu riêng, tối thiểu 12 ký tự.
 

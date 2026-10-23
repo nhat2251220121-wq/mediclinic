@@ -39,16 +39,27 @@ The schedule request body is `{ "days": [{ "work_date": "YYYY-MM-DD", "shift_ids
 | Method | Endpoint | Access | Purpose |
 | --- | --- | --- | --- |
 | GET | `/api/payments/create-qr?appointmentId=:id` | Appointment owner or ADMIN | Get QR details and current outstanding balance |
+| POST | `/api/payments/create-qr` | Appointment owner or ADMIN | Select QR, clear a pending cash request, and return the latest QR balance |
 | GET | `/api/payments/status/:appointmentId` | Appointment owner or ADMIN | Read server-side total, paid, due, and status |
+| POST | `/api/invoices/:id/cash-request` | PATIENT (owner only) | Persist a pending cash-at-counter request; does not create a payment row or mark paid |
 | PATCH | `/api/invoices/:id/pay` | ADMIN | Record cash received at the counter, capped to the remaining balance |
 | POST | `/api/payments/sepay-webhook` | SePay API key | Idempotently record an incoming bank transfer |
-| GET | `/api/notifications` | Authenticated user | Read only the caller's notifications and unread count |
-| PATCH | `/api/notifications/:id/read` | Authenticated user | Mark only the caller's notification as read |
-| PATCH | `/api/notifications/read-all` | Authenticated user | Mark the caller's notifications as read |
+| GET | `/api/notifications` | PATIENT | Read only the caller's notifications and unread count |
+| PATCH | `/api/notifications/:id/read` | PATIENT | Mark only the caller's notification as read (idempotent) |
+| PATCH | `/api/notifications/read-all` | PATIENT | Mark the caller's notifications as read |
+| GET | `/api/medical-records/follow-ups?date=YYYY-MM-DD` | DOCTOR | List only the caller doctor's follow-up records for a clinic date; `follow_up_appointment_id` is null when no new booking exists |
 | GET | `/api/medical-records/pending-dispensing` | ADMIN | List completed visits with prescriptions awaiting a pharmacy outcome |
 | POST | `/api/medical-records/:recordId/dispense` | ADMIN | Record pharmacy-dispensed or externally purchased lines in one transaction |
 
-Cash confirmation accepts `expectedAmount`; if the invoice balance changed since the admin reviewed it, the API returns `409 AMOUNT_CHANGED` and records nothing. Each payment row retains its own method, amount, provider reference, timestamp, and (for cash) receiving admin. Invoice responses include the payment rows and calculated totals.
+When a doctor saves a medical record, the backend validates each active drug's catalog price (> 0), snapshots it on the prescription, inserts medicine invoice lines, and recalculates the invoice in the same transaction. It creates one deduplicated `MEDICAL_RECORD_READY` notice and synchronizes one current invoice notice; a follow-up date creates its own informational notice. Patient record APIs are scoped to the authenticated patient, and prescription history is included.
+
+The pharmacy endpoint is now delivery/inventory only for prescriptions marked `BILLED`; it requires the invoice to be fully paid before stock is deducted. The additive migration `011_invoice_prescription_billing_and_cash_request.js` adds `prescriptions.billing_status` and `invoices.cash_requested_at`. Existing prescriptions default to `UNBILLED`; on first pharmacy processing they are billed once from their saved `unit_price` snapshot. If the legacy snapshot is zero/invalid, processing stops for admin review; no price is invented. If that billing leaves a balance, it commits only the invoice lines and asks for payment; a later request may deliver the medicine after full payment.
+
+Saving a medical record with `follow_up_date` writes the follow-up row and a `FOLLOW_UP` patient notification in the same transaction. The message includes only the follow-up date and public doctor/service names; it excludes diagnoses, symptoms, and instructions. Migration `008_followup_notifications.js` adds the informational `INFO` notification status while retaining existing notification statuses. Apply pending migrations only after backing up and testing against a separate database; do not run `schema.sql` against a populated clinic database.
+
+`GET /api/medical-records/catalog` returns the ICD-10 catalog from `icd10_codes`; the doctor may search by code/title, leave it blank, and chooses manually. `GET /api/medical-records/:id` and `GET /api/medical-records` include `icd10_description` when the code exists. Migration `009_seed_icd10_starter_catalog.js` adds a small, WHO-sourced starter catalog to empty entries without overwriting existing rows; it is not a complete coding dataset. See [ICD10-CATALOG.md](ICD10-CATALOG.md). Migration `010_add_meal_independent_option.js` adds the explicit “Không phụ thuộc bữa ăn” catalog choice. Empty `meal_relation_id` remains compatible and displays as “Không chỉ định”. New prescription form requests may omit legacy `frequency` and `time_ids`; the backend still stores/returns those existing fields for older prescriptions.
+
+Cash confirmation accepts `expectedAmount`; if the invoice balance changed since the admin reviewed it, the API returns `409 AMOUNT_CHANGED` and records nothing. Each payment row retains its own method, amount, provider reference, timestamp, and (for cash) receiving admin. Invoice responses include itemized service/medicine lines, payment rows, method, pending cash timestamp, and calculated totals. A cash request remains unpaid until an admin confirms actual receipt.
 
 Payment writers and pharmacy dispensing lock the invoice before related rows; repeated provider transaction IDs and repeat cash collection/dispensing are rejected or idempotent. Overpayments remain recorded with `OVERPAID`/`REVIEW`; no automatic refund is attempted. Cancelling a paid appointment retains all transactions and flags them for reconciliation. Listen for `payment_updated` and `notifications_updated`; always refetch server data after reconnecting or reloading. Historical VNPay rows are retained as legacy records but the application no longer starts or verifies VNPay transactions.
 

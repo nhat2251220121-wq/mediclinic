@@ -129,9 +129,10 @@ const getAppointments = async (req, res, next) => {
     let query = `SELECT a.appointment_id AS id, a.appointment_id, DATE_FORMAT(a.appointment_date, '%Y-%m-%d') AS appointment_date, a.time_slot, a.status,
       COALESCE(i.payment_status, 'UNPAID') AS payment_status, a.initial_symptoms, a.ai_predicted_specialty, a.notes, a.created_at,
       p.id AS patient_id, p.full_name AS patient_name, p.phone AS patient_phone,
-      d.id AS doctor_id, du.full_name AS doctor_name, s.name AS specialty_name, r.room_number, r.name AS room_name
+      d.id AS doctor_id, du.full_name AS doctor_name, s.name AS specialty_name, svc.name AS service_name, r.room_number, r.name AS room_name
       FROM appointments a JOIN users p ON a.patient_id = p.id JOIN doctors d ON a.doctor_id = d.id
       JOIN users du ON d.user_id = du.id LEFT JOIN specialties s ON d.specialty_id = s.id
+      LEFT JOIN services svc ON svc.id = a.service_id
       LEFT JOIN rooms r ON d.room_id = r.id LEFT JOIN invoices i ON i.appointment_id = a.appointment_id`;
     const params = [];
     if (role === 'PATIENT') { query += ' WHERE a.patient_id = ?'; params.push(userId); }

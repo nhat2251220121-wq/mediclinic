@@ -24,12 +24,31 @@ const createVietQR = async (req, res, next) => {
     if (!invoice) return res.status(404).json({ success: false, message: 'Chưa có hóa đơn cho lịch hẹn.' });
     if (!isOwnerOrAdmin(req, invoice.patient_id)) return res.status(403).json({ success: false, message: 'Bạn không có quyền xem khoản thanh toán này.' });
     if (invoice.appointment_status === 'CANCELLED') return res.status(409).json({ success: false, message: 'Lịch đã hủy; vui lòng liên hệ phòng khám để đối soát khoản thu.' });
-    const amount = toMoney(Number(invoice.total_amount) - Number(invoice.paid_amount));
+    let amount = toMoney(Number(invoice.total_amount) - Number(invoice.paid_amount));
     if (amount <= 0) return res.status(409).json({ success: false, message: 'Hóa đơn đã được thanh toán đủ.' });
     const bankName = process.env.BANK_NAME;
     const bankAccount = process.env.BANK_ACCOUNT;
     const accountName = process.env.ACCOUNT_NAME;
     if (!bankName || !bankAccount || !accountName) return res.status(503).json({ success: false, message: 'Thông tin tài khoản nhận thanh toán chưa được cấu hình.' });
+    if (req.method === 'POST') {
+      const connection = await pool.getConnection();
+      try {
+        await connection.beginTransaction();
+        const [locked] = await connection.query('SELECT id, total_amount FROM invoices WHERE id = ? FOR UPDATE', [invoice.id]);
+        if (!locked.length) { await connection.rollback(); return res.status(404).json({ success: false, message: 'Không tìm thấy hóa đơn.' }); }
+        const [[appointmentState]] = await connection.query('SELECT status FROM appointments WHERE appointment_id = ? FOR UPDATE', [appointmentId]);
+        if (!appointmentState || appointmentState.status === 'CANCELLED') { await connection.rollback(); return res.status(409).json({ success: false, message: 'Lịch đã hủy; vui lòng liên hệ phòng khám để đối soát.' }); }
+        const [[paidNow]] = await connection.query("SELECT COALESCE(SUM(amount),0) AS paid FROM payments WHERE invoice_id = ? AND payment_status = 'PAID'", [invoice.id]);
+        amount = toMoney(Number(locked[0].total_amount) - Number(paidNow.paid));
+        if (amount <= 0) { await connection.rollback(); return res.status(409).json({ success: false, message: 'Hóa đơn đã được thanh toán đủ.' }); }
+        await connection.query("UPDATE invoices SET payment_method = 'BANK_TRANSFER', cash_requested_at = NULL WHERE id = ?", [invoice.id]);
+        await connection.commit();
+        invoice.total_amount = locked[0].total_amount;
+        invoice.paid_amount = paidNow.paid;
+        emitPayment(req, invoice.patient_id, appointmentId, 'QR_PENDING', amount);
+      } catch (error) { await connection.rollback(); throw error; }
+      finally { connection.release(); }
+    }
     const transferContent = `MEDICLINIC${appointmentId}`;
     const qrUrl = `https://qr.sepay.vn/img?bank=${encodeURIComponent(bankName)}&acc=${encodeURIComponent(bankAccount)}&template=compact&amount=${amount}&des=${encodeURIComponent(transferContent)}`;
     return res.json({ success: true, data: { appointmentId, invoiceId: invoice.id, totalAmount: Number(invoice.total_amount), paidAmount: Number(invoice.paid_amount), amount, bankName, accountNumber: bankAccount, accountName, transferContent, qrUrl } });
@@ -78,7 +97,7 @@ const sepayWebhook = async (req, res, next) => {
     );
     const totalPaid = alreadyPaid + amount;
     const paymentStatus = totalPaid >= Number(invoice.total_amount) ? 'PAID' : 'UNPAID';
-    await connection.query('UPDATE invoices SET payment_status = ?, payment_method = \'BANK_TRANSFER\', paid_at = IF(? = \'PAID\', NOW(), paid_at) WHERE id = ?', [paymentStatus, paymentStatus, invoice.id]);
+    await connection.query('UPDATE invoices SET payment_status = ?, payment_method = \'BANK_TRANSFER\', cash_requested_at = NULL, paid_at = IF(? = \'PAID\', NOW(), paid_at) WHERE id = ?', [paymentStatus, paymentStatus, invoice.id]);
     const notice = await syncInvoiceNotification(connection, { invoiceId: invoice.id, totalAmount: invoice.total_amount, paidAmount: totalPaid, forceReview: appointments[0]?.status === 'CANCELLED' });
     await connection.commit();
     emitPayment(req, invoice.patient_id, appointmentId, paymentStatus, amount);
@@ -95,7 +114,7 @@ const getPaymentStatus = async (req, res, next) => {
   try {
     const appointmentId = Number(req.params.appointmentId);
     const [[invoice]] = await pool.query(
-      `SELECT i.id, i.patient_id, i.total_amount, i.payment_status, i.payment_method, i.paid_at,
+      `SELECT i.id, i.patient_id, i.total_amount, i.payment_status, i.payment_method, i.cash_requested_at, i.paid_at,
        COALESCE(SUM(CASE WHEN p.payment_status = 'PAID' THEN p.amount ELSE 0 END), 0) AS paid_amount
        FROM invoices i LEFT JOIN payments p ON p.invoice_id = i.id WHERE i.appointment_id = ? GROUP BY i.id`, [appointmentId]
     );

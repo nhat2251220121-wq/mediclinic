@@ -204,8 +204,20 @@ CREATE TABLE `dosage_times` (
 CREATE TABLE `meal_relations` (
     `relation_id` INT AUTO_INCREMENT PRIMARY KEY,
     `name` VARCHAR(50) NOT NULL UNIQUE, -- 'Trước ăn', 'Sau ăn', 'Trong khi ăn'
-    `description` VARCHAR(255) NULL
+    `description` VARCHAR(255) NULL,
+    `is_active` BOOLEAN NOT NULL DEFAULT TRUE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Minimal WHO ICD-10 starter catalog; not a full clinical coding dataset.
+INSERT INTO `icd10_codes` (`code`, `description`) VALUES
+    ('I10', 'Essential (primary) hypertension'),
+    ('L23', 'Allergic contact dermatitis');
+
+INSERT INTO `meal_relations` (`name`, `description`) VALUES
+    ('Trước ăn', 'Theo hướng dẫn trước bữa ăn'),
+    ('Sau ăn', 'Theo hướng dẫn sau bữa ăn'),
+    ('Trong khi ăn', 'Dùng cùng bữa ăn'),
+    ('Không phụ thuộc bữa ăn', 'Không yêu cầu thời điểm dùng thuốc theo bữa ăn');
 
 CREATE TABLE `drugs` (
     `drug_id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -264,6 +276,7 @@ CREATE TABLE `prescriptions` (
     `duration` INT DEFAULT 5, -- Số ngày uống
     `quantity` INT UNSIGNED NOT NULL DEFAULT 1,
     `unit_price` DECIMAL(12,2) NOT NULL DEFAULT 0,
+    `billing_status` ENUM('UNBILLED','BILLED') NOT NULL DEFAULT 'UNBILLED',
     `dispensing_status` ENUM('PRESCRIBED','DISPENSED','NOT_DISPENSED') NOT NULL DEFAULT 'PRESCRIBED',
     `dispensed_at` DATETIME NULL,
     `dispensed_quantity` INT UNSIGNED NOT NULL DEFAULT 0,
@@ -311,6 +324,7 @@ CREATE TABLE `invoices` (
     `total_amount` DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
     `payment_status` ENUM('UNPAID', 'PAID') NOT NULL DEFAULT 'UNPAID',
     `payment_method` ENUM('CASH', 'BANK_TRANSFER') DEFAULT 'CASH',
+    `cash_requested_at` DATETIME NULL,
     `paid_at` DATETIME NULL,
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT `fk_invoices_appointment` FOREIGN KEY (`appointment_id`) REFERENCES `appointments`(`appointment_id`) ON DELETE RESTRICT,
@@ -333,7 +347,7 @@ CREATE TABLE `notifications` (
     `invoice_id` INT NULL,
     `appointment_id` INT NULL,
     `dedupe_key` VARCHAR(190) NOT NULL,
-    `status` ENUM('ACTION_REQUIRED','PAID','REVIEW','SUPERSEDED') NOT NULL DEFAULT 'ACTION_REQUIRED',
+    `status` ENUM('ACTION_REQUIRED','PAID','REVIEW','SUPERSEDED','INFO') NOT NULL DEFAULT 'ACTION_REQUIRED',
     `is_read` BOOLEAN NOT NULL DEFAULT FALSE,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
