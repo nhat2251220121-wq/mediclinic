@@ -10,7 +10,7 @@ const getInvoices = async (req, res, next) => {
         let query = `
             SELECT 
                 i.id, i.appointment_id, i.service_fee, i.medicine_fee, i.total_amount,
-                i.payment_status, i.payment_method, i.paid_at, i.created_at, a.status AS appointment_status,
+                i.payment_status, i.payment_method, i.cash_requested_at, i.paid_at, i.created_at, a.status AS appointment_status,
                 COALESCE(SUM(CASE WHEN pay.payment_status = 'PAID' THEN pay.amount ELSE 0 END), 0) AS amount_paid,
                 GREATEST(i.total_amount - COALESCE(SUM(CASE WHEN pay.payment_status = 'PAID' THEN pay.amount ELSE 0 END), 0), 0) AS amount_due,
                 GROUP_CONCAT(DISTINCT pay.reconciliation_status) AS reconciliation_statuses,
@@ -37,16 +37,25 @@ const getInvoices = async (req, res, next) => {
         const [invoices] = await pool.query(query, params);
         if (invoices.length) {
             const invoiceIds = invoices.map((invoice) => invoice.id);
-            const [payments] = await pool.query(
+            const [[payments], [items]] = await Promise.all([
+                pool.query(
                 `SELECT pay.payment_id, pay.invoice_id, pay.provider, pay.payment_method, pay.transaction_code,
                  pay.amount, pay.payment_status, pay.reconciliation_status, pay.created_at,
                  cashier.full_name AS received_by_name
                  FROM payments pay LEFT JOIN users cashier ON cashier.id = pay.received_by
-                 WHERE pay.invoice_id IN (?) ORDER BY pay.created_at, pay.payment_id`, [invoiceIds]
-            );
+                 WHERE pay.invoice_id IN (?) ORDER BY pay.created_at, pay.payment_id`, [invoiceIds]),
+                pool.query(
+                    `SELECT id, invoice_id, item_type, item_reference_id, description, quantity, unit_price, line_total
+                     FROM invoice_items WHERE invoice_id IN (?) ORDER BY invoice_id, id`, [invoiceIds])
+            ]);
             const byInvoice = new Map(invoiceIds.map((id) => [id, []]));
+            const itemsByInvoice = new Map(invoiceIds.map((id) => [id, []]));
             for (const payment of payments) byInvoice.get(payment.invoice_id)?.push(payment);
-            for (const invoice of invoices) invoice.payments = byInvoice.get(invoice.id) || [];
+            for (const item of items) itemsByInvoice.get(item.invoice_id)?.push(item);
+            for (const invoice of invoices) {
+                invoice.payments = byInvoice.get(invoice.id) || [];
+                invoice.items = itemsByInvoice.get(invoice.id) || [];
+            }
         }
 
         res.status(200).json({
@@ -88,7 +97,7 @@ const updatePaymentStatus = async (req, res, next) => {
             `INSERT INTO payments (invoice_id, provider, external_transaction_id, payment_method, transaction_code, amount, payment_status, received_by)
              VALUES (?, 'INTERNAL', ?, 'CASH', ?, ?, 'PAID', ?)`, [id, transactionCode, transactionCode, due, req.user.id]
         );
-        await connection.query("UPDATE invoices SET payment_status = 'PAID', payment_method = 'CASH', paid_at = NOW() WHERE id = ?", [id]);
+        await connection.query("UPDATE invoices SET payment_status = 'PAID', payment_method = 'CASH', cash_requested_at = NULL, paid_at = NOW() WHERE id = ?", [id]);
         const [[totalPaidRow]] = await connection.query("SELECT COALESCE(SUM(amount), 0) AS paid FROM payments WHERE invoice_id = ? AND payment_status = 'PAID'", [id]);
         const notice = await syncInvoiceNotification(connection, { invoiceId: Number(id), totalAmount: invoice.total_amount, paidAmount: Number(totalPaidRow.paid) });
         await connection.commit();
@@ -102,7 +111,33 @@ const updatePaymentStatus = async (req, res, next) => {
     } finally { connection.release(); }
 };
 
+const requestCashPayment = async (req, res, next) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        const [rows] = await connection.query(
+            `SELECT i.id, i.patient_id, i.appointment_id, i.total_amount, a.status AS appointment_status
+             FROM invoices i JOIN appointments a ON a.appointment_id = i.appointment_id WHERE i.id = ? FOR UPDATE`, [req.params.id]
+        );
+        const invoice = rows[0];
+        if (!invoice) { await connection.rollback(); return res.status(404).json({ success: false, message: 'Không tìm thấy hóa đơn.' }); }
+        if (invoice.patient_id !== req.user.id) { await connection.rollback(); return res.status(403).json({ success: false, message: 'Bạn không có quyền yêu cầu thanh toán hóa đơn này.' }); }
+        if (invoice.appointment_status === 'CANCELLED') { await connection.rollback(); return res.status(409).json({ success: false, message: 'Lịch đã hủy; vui lòng liên hệ phòng khám để đối soát.' }); }
+        const [[paidRow]] = await connection.query("SELECT COALESCE(SUM(amount),0) AS paid FROM payments WHERE invoice_id = ? AND payment_status = 'PAID'", [invoice.id]);
+        const due = Math.max(0, Math.round((Number(invoice.total_amount) - Number(paidRow.paid)) * 100) / 100);
+        if (due <= 0) { await connection.rollback(); return res.status(409).json({ success: false, message: 'Hóa đơn đã thanh toán đủ.' }); }
+        await connection.query("UPDATE invoices SET payment_method = 'CASH', cash_requested_at = COALESCE(cash_requested_at, NOW()) WHERE id = ?", [invoice.id]);
+        await connection.commit();
+        const event = { appointmentId: invoice.appointment_id, status: 'CASH_PENDING', amountDue: due };
+        req.app.get('io')?.to(`user:${req.user.id}`).emit('payment_updated', event);
+        req.app.get('io')?.to('role:ADMIN').emit('payment_updated', event);
+        return res.json({ success: true, message: 'Đã ghi nhận yêu cầu thanh toán tiền mặt. Vui lòng thanh toán tại quầy; hóa đơn chưa được đánh dấu đã trả.', data: { invoice_id: invoice.id, payment_method: 'CASH', payment_status: 'UNPAID', amount_due: due } });
+    } catch (error) { await connection.rollback(); next(error); }
+    finally { connection.release(); }
+};
+
 module.exports = {
     getInvoices,
-    updatePaymentStatus
+    updatePaymentStatus,
+    requestCashPayment
 };

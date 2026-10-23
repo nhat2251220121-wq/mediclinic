@@ -14,8 +14,12 @@ const listMine = async (req, res, next) => {
 const markRead = async (req, res, next) => {
   try {
     const [result] = await pool.query('UPDATE notifications SET is_read = TRUE WHERE id = ? AND recipient_user_id = ?', [req.params.id, req.user.id]);
-    if (!result.affectedRows) return res.status(404).json({ success: false, message: 'Không tìm thấy thông báo của tài khoản này.' });
-    req.app.get('io')?.to(`user:${req.user.id}`).emit('notifications_updated', { id: Number(req.params.id) });
+    if (!result.affectedRows) {
+      const [owned] = await pool.query('SELECT id FROM notifications WHERE id = ? AND recipient_user_id = ?', [req.params.id, req.user.id]);
+      if (!owned.length) return res.status(404).json({ success: false, message: 'Không tìm thấy thông báo của tài khoản này.' });
+    } else {
+      req.app.get('io')?.to(`user:${req.user.id}`).emit('notifications_updated', { id: Number(req.params.id) });
+    }
     return res.json({ success: true });
   } catch (error) { next(error); }
 };

@@ -12,6 +12,7 @@ const MedicalHistory = () => {
   const { user } = useAuth();
   const [appointments, setAppointments] = useState([]);
   const [invoices, setInvoices] = useState([]);
+  const [medicalRecords, setMedicalRecords] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // State cho Modal xem chi tiết
@@ -42,13 +43,15 @@ const MedicalHistory = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [appRes, invRes] = await Promise.all([
+      const [appRes, invRes, recordRes] = await Promise.all([
         axiosClient.get('/appointments'),
-        axiosClient.get('/invoices')
+        axiosClient.get('/invoices'),
+        axiosClient.get('/medical-records')
       ]);
 
       if (appRes.success) setAppointments(appRes.data);
       if (invRes.success) setInvoices(invRes.data);
+      if (recordRes.success) setMedicalRecords(recordRes.data || []);
     } catch (err) {
       console.error('Lỗi tải dữ liệu lịch sử khám:', err);
     } finally {
@@ -68,9 +71,25 @@ const MedicalHistory = () => {
     return {
       ...app,
       invoice: matchedInv || null,
+      medicalRecord: medicalRecords.find((record) => Number(record.appointment_id) === Number(app.appointment_id || app.id)) || null,
       isPaid: Boolean(matchedInv && Number(matchedInv.amount_due) <= 0 && matchedInv.payment_status === 'PAID')
     };
   });
+
+  useEffect(() => {
+    const appointmentId = new URLSearchParams(location.search).get('appointmentId');
+    if (!appointmentId || loading) return;
+    const index = combinedHistory.findIndex((item) => String(item.appointment_id || item.id) === appointmentId);
+    if (index < 0) return;
+    setCurrentPage(Math.floor(index / pageSize) + 1);
+    setSelectedRecord((current) => current?.id === combinedHistory[index].id ? current : combinedHistory[index]);
+    document.getElementById(`appointment-${appointmentId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [location.search, loading, appointments, invoices, medicalRecords]);
+
+  useEffect(() => {
+    const appointmentId = new URLSearchParams(location.search).get('appointmentId');
+    if (appointmentId && !loading) document.getElementById(`appointment-${appointmentId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [currentPage, location.search, loading]);
 
   const totalPages = Math.ceil(combinedHistory.length / pageSize) || 1;
   const paginatedHistory = combinedHistory.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -125,8 +144,8 @@ const MedicalHistory = () => {
                 </tr>
               ) : (
                 paginatedHistory.map((item) => (
-                  <tr key={item.id} id={item.invoice?.id ? `invoice-${item.invoice.id}` : undefined} className="hover:bg-slate-50/60 transition">
-                    <td className="py-4 px-6 font-semibold text-sky-600">#{item.id}</td>
+                  <tr key={item.id} className="hover:bg-slate-50/60 transition">
+                    <td className="py-4 px-6 font-semibold text-sky-600"><span id={`appointment-${item.appointment_id || item.id}`} /><span id={item.invoice?.id ? `invoice-${item.invoice.id}` : undefined} />#{item.id}</td>
                     <td className="py-4 px-6">
                       <div className="font-semibold text-slate-800">{item.appointment_date}</div>
                       <div className="text-slate-400 text-[11px]">{item.time_slot}</div>
@@ -141,6 +160,7 @@ const MedicalHistory = () => {
                         <div className="text-[11px] text-slate-700">Tổng {Number(item.invoice.total_amount).toLocaleString('vi-VN')}đ · Đã trả {Number(item.invoice.amount_paid).toLocaleString('vi-VN')}đ</div>
                         <div className={`text-[11px] font-semibold ${Number(item.invoice.amount_due) > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>Còn thiếu {Number(item.invoice.amount_due).toLocaleString('vi-VN')}đ</div>
                         {Number(item.invoice.amount_due) > 0 && item.status !== 'CANCELLED' && <button onClick={() => handleOpenPaymentModal(item)} className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-3 py-1 text-xs font-bold text-white"><QrCode className="h-3.5 w-3.5" />Trả phần còn thiếu</button>}
+                        {item.invoice.cash_requested_at && Number(item.invoice.amount_due) > 0 && <span className="block text-[11px] font-semibold text-amber-700">Tiền mặt tại quầy · đang chờ xác nhận thu</span>}
                         {item.status === 'CANCELLED' && <span className="text-[11px] font-semibold text-amber-700">Lịch đã hủy · liên hệ phòng khám để đối soát</span>}
                         <details className="text-[11px]"><summary className="cursor-pointer text-sky-700">Giao dịch ({item.invoice.payments?.length || 0})</summary><div className="mt-1 space-y-1">{item.invoice.payments?.map((payment) => <p key={payment.payment_id} className="text-slate-600">{payment.payment_method === 'CASH' ? 'Tiền mặt' : 'Chuyển khoản'} · {Number(payment.amount).toLocaleString('vi-VN')}đ · {payment.transaction_code || payment.provider} · {new Date(payment.created_at).toLocaleString('vi-VN')}</p>)}</div></details>
                       </div> : <span className="text-xs text-slate-500">Hóa đơn đang được cập nhật.</span>}
@@ -184,6 +204,37 @@ const MedicalHistory = () => {
               </button>
             </div>
 
+            <section className="space-y-3 rounded-2xl border border-sky-100 bg-sky-50/50 p-4 text-sm">
+              <h4 className="font-bold text-slate-900">Bệnh án và đơn thuốc</h4>
+              {selectedRecord.medicalRecord ? <>
+                <p><strong>Chẩn đoán:</strong> {selectedRecord.medicalRecord.final_diagnosis || 'Chưa ghi nhận'}</p>
+                <p><strong>Triệu chứng:</strong> {selectedRecord.medicalRecord.symptoms || 'Chưa ghi nhận'}</p>
+                <p><strong>Chẩn đoán ban đầu:</strong> {selectedRecord.medicalRecord.initial_diagnosis || 'Chưa ghi nhận'}</p>
+                <p><strong>Sinh hiệu:</strong> {[
+                  selectedRecord.medicalRecord.height != null && `Cao ${selectedRecord.medicalRecord.height} cm`,
+                  selectedRecord.medicalRecord.weight != null && `Nặng ${selectedRecord.medicalRecord.weight} kg`,
+                  selectedRecord.medicalRecord.blood_pressure && `HA ${selectedRecord.medicalRecord.blood_pressure} mmHg`,
+                  selectedRecord.medicalRecord.temperature != null && `Nhiệt ${selectedRecord.medicalRecord.temperature} °C`,
+                  selectedRecord.medicalRecord.heart_rate != null && `Mạch ${selectedRecord.medicalRecord.heart_rate}/phút`,
+                  selectedRecord.medicalRecord.spo2 != null && `SpO₂ ${selectedRecord.medicalRecord.spo2}%`
+                ].filter(Boolean).join(' · ') || 'Chưa ghi nhận'}</p>
+                <p><strong>Mã ICD-10:</strong> {selectedRecord.medicalRecord.icd10_code ? `${selectedRecord.medicalRecord.icd10_code}${selectedRecord.medicalRecord.icd10_description ? ` · ${selectedRecord.medicalRecord.icd10_description}` : ''}` : 'Chưa ghi nhận'}</p>
+                <p><strong>Kế hoạch điều trị:</strong> {selectedRecord.medicalRecord.treatment_plan || 'Chưa ghi nhận'}</p>
+                <p><strong>Lời dặn:</strong> {selectedRecord.medicalRecord.advice || 'Chưa ghi nhận'}</p>
+                <p><strong>Tái khám:</strong> {selectedRecord.medicalRecord.follow_up_date ? `${selectedRecord.medicalRecord.follow_up_date}${selectedRecord.medicalRecord.follow_up_notes ? ` · ${selectedRecord.medicalRecord.follow_up_notes}` : ''}` : 'Không hẹn tái khám'}</p>
+                <div><strong>Đơn thuốc</strong>{selectedRecord.medicalRecord.prescriptions?.length ? <div className="mt-2 space-y-2">{selectedRecord.medicalRecord.prescriptions.map((drug) => <div key={drug.prescription_id} className="rounded-xl border bg-white p-3"><p className="font-semibold">{drug.medicine_name}{drug.medicine_generic_name ? ` (${drug.medicine_generic_name})` : ''}</p><p className="text-xs text-slate-600">Số lượng: {drug.quantity} {drug.unit_name || ''} · {drug.dosage} · {drug.duration} ngày</p><p className="text-xs text-slate-600">Quan hệ bữa ăn: {drug.meal_name || 'Không chỉ định'} · {drug.instructions || 'Không có hướng dẫn thêm'}</p></div>)}</div> : <p className="mt-1 text-slate-500">Không có thuốc được kê.</p>}</div>
+              </> : <p className="text-slate-500">Chưa có bệnh án được lưu cho lần khám này.</p>}
+            </section>
+
+            {selectedRecord.invoice && <section className="patient-invoice-receipt rounded-2xl border border-slate-200 p-4 text-sm">
+              <div className="flex items-center justify-between"><h4 className="font-bold">Biên lai / hóa đơn #{selectedRecord.invoice.id}</h4><button type="button" className="patient-receipt-action inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold" onClick={() => window.print()}><Download className="h-3.5 w-3.5" />In biên lai</button></div>
+              <p className="mt-2">Bệnh nhân: {user?.full_name || 'Bệnh nhân'} · Phương thức: {selectedRecord.invoice.payment_method === 'CASH' ? 'Tiền mặt' : 'QR / chuyển khoản'}</p>
+              <div className="mt-2 divide-y">{selectedRecord.invoice.items?.map((line) => <div key={line.id} className="flex justify-between gap-3 py-2"><span>{line.description} · {line.quantity} × {Number(line.unit_price).toLocaleString('vi-VN')}đ</span><strong>{Number(line.line_total).toLocaleString('vi-VN')}đ</strong></div>)}</div>
+              <p className="mt-2">Phí dịch vụ {Number(selectedRecord.invoice.service_fee).toLocaleString('vi-VN')}đ · Thuốc {Number(selectedRecord.invoice.medicine_fee).toLocaleString('vi-VN')}đ</p>
+              <p className="mt-1 font-bold">Tổng {Number(selectedRecord.invoice.total_amount).toLocaleString('vi-VN')}đ · Đã thu {Number(selectedRecord.invoice.amount_paid).toLocaleString('vi-VN')}đ · Còn thiếu {Number(selectedRecord.invoice.amount_due).toLocaleString('vi-VN')}đ</p>
+              <div className="mt-2 border-t pt-2"><strong>Giao dịch đã ghi nhận</strong>{selectedRecord.invoice.payments?.length ? selectedRecord.invoice.payments.map((payment) => <p key={payment.payment_id} className="mt-1 text-xs">{payment.payment_method === 'CASH' ? 'Tiền mặt' : 'Chuyển khoản'} · {Number(payment.amount).toLocaleString('vi-VN')}đ · {payment.transaction_code || payment.provider} · {new Date(payment.created_at).toLocaleString('vi-VN')}</p>) : <p className="mt-1 text-xs text-slate-500">Chưa ghi nhận khoản thu.</p>}</div>
+            </section>}
+
             <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs space-y-2">
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -203,6 +254,7 @@ const MedicalHistory = () => {
                   <strong className={selectedRecord.isPaid ? 'text-emerald-600 font-bold' : 'text-amber-600 font-bold'}>
                     {selectedRecord.invoice ? `${Number(selectedRecord.invoice.amount_paid).toLocaleString('vi-VN')}đ đã thu · ${Number(selectedRecord.invoice.amount_due).toLocaleString('vi-VN')}đ còn thiếu` : 'Chưa có hóa đơn'}
                   </strong>
+                  {selectedRecord.invoice && <span className="mt-1 block text-slate-600">Phương thức: {selectedRecord.invoice.payment_method === 'CASH' ? 'Tiền mặt' : 'QR / chuyển khoản'}{selectedRecord.invoice.cash_requested_at && !selectedRecord.isPaid ? ' · đang chờ thu tại quầy' : ''}</span>}
                 </div>
               </div>
             </div>
@@ -240,10 +292,11 @@ const MedicalHistory = () => {
           onClose={() => setIsPaymentModalOpen(false)}
           appointmentId={selectedPaymentApp.id}
           patientName={user?.full_name || 'Bệnh nhân'}
-          amount={selectedPaymentApp.invoice?.total_amount || 300000}
+          amount={selectedPaymentApp.invoice?.total_amount}
           onSuccess={() => fetchData()}
         />
       )}
+      <style>{`@media print { body * { visibility: hidden !important; } .patient-invoice-receipt, .patient-invoice-receipt * { visibility: visible !important; } .patient-invoice-receipt { position: fixed !important; inset: 0 !important; border: 0 !important; border-radius: 0 !important; padding: 24px !important; background: white !important; } .patient-receipt-action { display: none !important; } }`}</style>
     </div>
   );
 };

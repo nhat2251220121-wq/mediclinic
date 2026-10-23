@@ -9,6 +9,7 @@ router.use(verifyToken);
 
 // Bác sĩ lưu hồ sơ bệnh án và đơn thuốc
 router.post('/', isDoctor, medicalRecordController.createMedicalRecord);
+router.get('/follow-ups', isDoctor, medicalRecordController.getMyFollowUps);
 router.get('/catalog', isDoctor, medicalRecordController.getClinicalCatalog);
 router.get('/pending-dispensing', isAdmin, medicalRecordController.getPendingDispensing);
 router.post('/:id/dispense', isAdmin, medicalRecordController.dispensePrescriptions);
