@@ -32,6 +32,7 @@ import ServiceMgmt from './pages/admin/ServiceMgmt';
 import DoctorMgmt from './pages/admin/DoctorMgmt';
 import PatientMgmt from './pages/admin/PatientMgmt';
 import AppointmentMgmt from './pages/admin/AppointmentMgmt';
+import WorkScheduleMgmt from './pages/admin/WorkScheduleMgmt';
 import InvoiceMgmt from './pages/admin/InvoiceMgmt';
 import DispensingMgmt from './pages/admin/DispensingMgmt';
 
@@ -85,6 +86,7 @@ function App() {
               <Route path="doctors" element={<DoctorMgmt />} />
               <Route path="patients" element={<PatientMgmt />} />
               <Route path="appointments" element={<AppointmentMgmt />} />
+              <Route path="work-schedule" element={<WorkScheduleMgmt />} />
               <Route path="invoices" element={<InvoiceMgmt />} />
               <Route path="dispensing" element={<DispensingMgmt />} />
             </Route>

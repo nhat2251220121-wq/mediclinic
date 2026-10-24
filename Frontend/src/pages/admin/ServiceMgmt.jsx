@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axiosClient from '../../api/axiosClient';
 import { Stethoscope, Plus, Search, Edit, Trash2, X, RefreshCw } from 'lucide-react';
 import ImageWithFallback from '../../components/common/ImageWithFallback';
+import DoctorCountDetailsButton from './DoctorCountDetailsButton';
 
 const ServiceMgmt = () => {
   const [services, setServices] = useState([]);
@@ -148,6 +149,7 @@ const ServiceMgmt = () => {
                 <th className="p-3.5 w-16">Mã</th>
                 <th className="p-3.5">Tên dịch vụ</th>
                 <th className="p-3.5">Chuyên khoa</th>
+                <th className="p-3.5 text-center w-36">Số lượng bác sĩ</th>
                 <th className="p-3.5">Ảnh</th>
                 <th className="p-3.5">Giá tiền</th>
                 <th className="p-3.5">Mô tả ngắn</th>
@@ -157,11 +159,11 @@ const ServiceMgmt = () => {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan="7" className="text-center py-8 text-slate-400">Đang tải gói dịch vụ...</td>
+                  <td colSpan="8" className="text-center py-8 text-slate-400">Đang tải gói dịch vụ...</td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="text-center py-8 text-slate-400">Chưa có dữ liệu gói dịch vụ.</td>
+                  <td colSpan="8" className="text-center py-8 text-slate-400">Chưa có dữ liệu gói dịch vụ.</td>
                 </tr>
               ) : (
                 filtered.map((item) => (
@@ -169,6 +171,7 @@ const ServiceMgmt = () => {
                     <td className="p-3.5 font-bold text-sky-600">#{item.id}</td>
                     <td className="p-3.5 font-bold text-slate-900">{item.name}</td>
                     <td className="p-3.5 text-slate-600">{item.specialty_name || specialties.find((sp) => Number(sp.id) === Number(item.specialty_id))?.name || 'Chưa gán chuyên khoa'}</td>
+                    <td className="p-3.5 text-center font-semibold text-slate-700"><span>{Number(item.doctor_count) || 0}</span><span className="block text-[10px] font-normal text-slate-500">Theo chuyên khoa</span><DoctorCountDetailsButton item={item} relation="service" /></td>
                     <td className="p-3.5"><ImageWithFallback src={item.image_url} alt={item.name} className="h-12 w-16 rounded-lg object-cover" fallback={<Stethoscope className="h-5 w-5" />} /></td>
                     <td className="p-3.5 font-extrabold text-emerald-600">{Number(item.price).toLocaleString()} đ</td>
                     <td className="p-3.5 text-slate-600 max-w-xs truncate">{item.description || 'Chưa cập nhật'}</td>

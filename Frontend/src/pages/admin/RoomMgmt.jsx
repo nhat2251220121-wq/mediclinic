@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axiosClient from '../../api/axiosClient';
 import { Building, Plus, Search, Edit, Trash2, X, RefreshCw } from 'lucide-react';
+import DoctorCountDetailsButton from './DoctorCountDetailsButton';
 
 const RoomMgmt = () => {
   const [rooms, setRooms] = useState([]);
@@ -117,17 +118,18 @@ const RoomMgmt = () => {
                 <th className="p-3.5 w-28">Số phòng</th>
                 <th className="p-3.5">Tên phòng khám</th>
                 <th className="p-3.5">Vị trí / Tầng</th>
+                <th className="p-3.5 text-center w-36">Số lượng bác sĩ</th>
                 <th className="p-3.5 text-center w-28">Hành động</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan="4" className="text-center py-8 text-slate-400">Đang tải danh sách phòng...</td>
+                  <td colSpan="5" className="text-center py-8 text-slate-400">Đang tải danh sách phòng...</td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan="4" className="text-center py-8 text-slate-400">Chưa có dữ liệu phòng khám.</td>
+                  <td colSpan="5" className="text-center py-8 text-slate-400">Chưa có dữ liệu phòng khám.</td>
                 </tr>
               ) : (
                 filtered.map((item) => (
@@ -135,6 +137,7 @@ const RoomMgmt = () => {
                     <td className="p-3.5 font-bold text-sky-600">{item.room_number}</td>
                     <td className="p-3.5 font-bold text-slate-900">{item.name}</td>
                     <td className="p-3.5 text-slate-600">{item.location || 'Tầng 1'}</td>
+                    <td className="p-3.5 text-center font-semibold text-slate-700"><span>{Number(item.doctor_count) || 0}</span><DoctorCountDetailsButton item={item} relation="room" /></td>
                     <td className="p-3.5 text-center">
                       <div className="flex items-center justify-center gap-1.5">
                         <button onClick={() => handleOpenEdit(item)} className="p-1.5 text-sky-600 hover:bg-sky-50 rounded-lg">

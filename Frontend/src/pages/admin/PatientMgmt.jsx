@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axiosClient from '../../api/axiosClient';
-import { Users, Search, RefreshCw, Phone, Mail, MapPin, Shield, Check, X, Edit } from 'lucide-react';
+import { Search, RefreshCw, Check, X, Edit, Eye } from 'lucide-react';
+import PatientDetailModal from './PatientDetailModal';
 
 const PatientMgmt = () => {
   const [patients, setPatients] = useState([]);
@@ -9,6 +10,7 @@ const PatientMgmt = () => {
 
   // Modal Sửa bệnh nhân
   const [selectedPatient, setSelectedPatient] = useState(null);
+  const [patientToView, setPatientToView] = useState(null);
   const [formData, setFormData] = useState({
     full_name: '',
     phone: '',
@@ -149,6 +151,9 @@ const PatientMgmt = () => {
                     </td>
                     <td className="p-3.5 text-center">
                       <div className="flex items-center justify-center gap-1.5">
+                        <button onClick={() => setPatientToView(p)} title="Xem hồ sơ và lịch sử khám" aria-label={`Xem hồ sơ bệnh nhân ${p.full_name}`} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg">
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
                         <button onClick={() => handleOpenEdit(p)} className="p-1.5 text-sky-600 hover:bg-sky-50 rounded-lg">
                           <Edit className="w-3.5 h-3.5" />
                         </button>
@@ -168,6 +173,8 @@ const PatientMgmt = () => {
           </table>
         </div>
       </div>
+
+      {patientToView && <PatientDetailModal key={patientToView.id} patient={patientToView} onClose={() => setPatientToView(null)} />}
 
       {selectedPatient && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
