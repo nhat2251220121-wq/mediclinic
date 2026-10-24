@@ -83,11 +83,20 @@ const createMedicalRecord = async (req, res, next) => {
       const drug = drugs[0];
       const unitPrice = Number(drug.price);
       if (!Number.isFinite(unitPrice) || unitPrice <= 0) throw new Error(`Thuốc ${drug.name} chưa có đơn giá hợp lệ. Vui lòng yêu cầu admin cập nhật giá trước khi kê đơn.`);
+      const mealRelationId = item.meal_relation_id === '' || item.meal_relation_id == null ? null : Number(item.meal_relation_id);
+      if (mealRelationId !== null) {
+        if (!Number.isInteger(mealRelationId) || mealRelationId < 1) throw new Error('Quan hệ bữa ăn không hợp lệ.');
+        const [mealRelations] = await connection.query(
+          'SELECT relation_id FROM meal_relations WHERE relation_id = ? AND is_active = TRUE FOR UPDATE',
+          [mealRelationId]
+        );
+        if (!mealRelations.length) throw new Error('Quan hệ bữa ăn không hợp lệ hoặc đã ngừng sử dụng.');
+      }
       const [prescriptionResult] = await connection.query(
         `INSERT INTO prescriptions (record_id, drug_id, dosage, frequency, duration, quantity, unit_price, billing_status, unit_id, meal_relation_id, instructions)
          VALUES (?, ?, ?, ?, ?, ?, ?, 'BILLED', ?, ?, ?)`,
         [recordId, drug.drug_id, String(item.dosage), item.frequency || null, duration, quantity, unitPrice,
-          item.unit_id || drug.unit_id || null, item.meal_relation_id || null, item.usage_instruction || item.instructions || null]
+          item.unit_id || drug.unit_id || null, mealRelationId, item.usage_instruction || item.instructions || null]
       );
       medicineLines.push({ drugId: drug.drug_id, name: drug.name, quantity, unitPrice, lineTotal: Math.round(quantity * unitPrice * 100) / 100 });
       const timeIds = Array.isArray(item.time_ids) ? item.time_ids : (item.time_id ? [item.time_id] : []);

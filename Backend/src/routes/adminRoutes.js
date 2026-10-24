@@ -4,6 +4,7 @@ const adminController = require('../controllers/adminMgmtController');
 const verifyToken = require('../middlewares/verifyToken');
 const { isAdmin } = require('../middlewares/checkRole');
 const uploadImage = require('../middlewares/imageUpload');
+const adminScheduleController = require('../controllers/adminScheduleController');
 
 // Áp dụng bảo vệ token và kiểm tra quyền Admin
 router.use(verifyToken);
@@ -17,6 +18,12 @@ router.get('/medicines', adminController.getMedicines);
 router.post('/medicines', adminController.createMedicine);
 router.put('/medicines/:id', adminController.updateMedicine);
 router.delete('/medicines/:id', adminController.deleteMedicine);
+router.get('/work-schedule/slots', adminScheduleController.getWorkSlots);
+router.patch('/work-schedule/slots/:slotId/status', adminScheduleController.setWorkSlotStatus);
+router.get('/meal-relations', adminController.getMealRelations);
+router.post('/meal-relations', adminController.createMealRelation);
+router.put('/meal-relations/:id', adminController.updateMealRelation);
+router.delete('/meal-relations/:id', adminController.deactivateMealRelation);
 
 // 3. Quản lý Chuyên Khoa
 router.get('/specialties', adminController.getSpecialties);
@@ -47,6 +54,8 @@ router.delete('/doctors/:id/avatar', adminController.removeDoctorAvatar);
 
 // 6. Quản lý Bệnh Nhân
 router.get('/patients', adminController.getPatients);
+router.get('/patients/:id/details', adminController.getPatientDetails);
+router.get('/patients/:patientId/medical-records/:recordId', adminController.getPatientMedicalRecordDetail);
 router.put('/patients/:id', adminController.updatePatient);
 
 module.exports = router;

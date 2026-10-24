@@ -18,9 +18,12 @@ import {
   FileText,
   ContactRound
 } from 'lucide-react';
+import { X } from 'lucide-react';
 
-const Sidebar = () => {
+const Sidebar = ({ collapsed = false, mobileOpen = false, onClose = () => {} }) => {
   const { role } = useAuth();
+  const isAdmin = role === 'ADMIN';
+  const isCollapsed = isAdmin && collapsed && !mobileOpen;
 
   // Menu Admin khớp 100% tài liệu đồ án (Hình 3.1 -> 3.7)
   const adminLinks = [
@@ -32,6 +35,7 @@ const Sidebar = () => {
     { to: '/admin/doctors', icon: UserCheck, label: 'Quản lý bác sĩ' },
     { to: '/admin/patients', icon: Users, label: 'Quản lý bệnh nhân' },
     { to: '/admin/appointments', icon: Calendar, label: 'Quản lý lịch hẹn khám' },
+    { to: '/admin/work-schedule', icon: Clock, label: 'Quản lý lịch làm' },
     { to: '/admin/invoices', icon: FileText, label: 'Quản lý hóa đơn / Viện phí' },
     { to: '/admin/dispensing', icon: Pill, label: 'Xác nhận cấp thuốc' },
   ];
@@ -56,23 +60,28 @@ const Sidebar = () => {
   else if (role === 'PATIENT') currentLinks = patientLinks;
 
   return (
-    <aside className="w-64 bg-slate-900 text-slate-300 min-h-screen flex flex-col flex-shrink-0 shadow-2xl">
+    <aside className={`${isAdmin
+      ? `sticky top-0 z-50 h-screen flex-shrink-0 transition-[width,transform] duration-200 ${collapsed ? 'w-[76px]' : 'w-64'} max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:w-64 ${mobileOpen ? 'max-lg:translate-x-0' : 'max-lg:-translate-x-full'}`
+      : 'w-64 min-h-screen flex-shrink-0'} bg-slate-900 text-slate-300 flex flex-col shadow-xl`}>
       {/* Brand Logo MediClinic */}
-      <div className="h-20 flex items-center gap-3 px-6 border-b border-slate-800">
+      <div className={`h-20 flex items-center ${isCollapsed ? 'justify-center px-3' : 'justify-between px-5'} gap-3 border-b border-slate-800`}>
+        <div className="flex min-w-0 items-center gap-3">
         <div className="w-10 h-10 bg-sky-600 rounded-2xl flex items-center justify-center text-white shadow-md shadow-sky-600/30">
           <ShieldPlus className="w-6 h-6" />
         </div>
-        <div>
+        {!isCollapsed && <div className="min-w-0">
           <h1 className="font-black text-lg text-white tracking-wide">MediClinic</h1>
           <p className="text-[10px] text-teal-400 font-semibold uppercase tracking-wider">Hệ thống Y Tế Thông Minh</p>
+        </div>}
         </div>
+        {isAdmin && mobileOpen && <button type="button" onClick={onClose} aria-label="Đóng menu" className="rounded-lg p-2 text-slate-300 hover:bg-slate-800 lg:hidden"><X className="h-5 w-5" /></button>}
       </div>
 
       {/* Danh mục Menu */}
-      <div className="flex-1 py-6 px-3.5 space-y-1 overflow-y-auto">
-        <div className="px-3 pb-2 text-[10px] font-extrabold uppercase tracking-widest text-slate-500">
+      <div className={`flex-1 py-5 ${isCollapsed ? 'px-2' : 'px-3.5'} space-y-1 overflow-y-auto`}>
+        {!isCollapsed && <div className="px-3 pb-2 text-[10px] font-extrabold uppercase tracking-widest text-slate-500">
           {role === 'ADMIN' ? 'Menu Quản Trị' : role === 'DOCTOR' ? 'Phân Hệ Bác Sĩ' : 'Dành Cho Bệnh Nhân'}
-        </div>
+        </div>}
 
         {currentLinks.map((link) => {
           const Icon = link.icon;
@@ -80,8 +89,10 @@ const Sidebar = () => {
             <NavLink
               key={link.to}
               to={link.to}
+              title={isCollapsed ? link.label : undefined}
+              onClick={isAdmin ? onClose : undefined}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all duration-200 ${
+                `flex items-center ${isCollapsed ? 'justify-center px-2' : 'gap-3 px-3.5'} py-2.5 rounded-xl text-xs font-bold transition-all duration-200 ${
                   isActive
                     ? 'bg-sky-600 text-white shadow-md shadow-sky-600/30'
                     : link.highlight
@@ -91,15 +102,15 @@ const Sidebar = () => {
               }
             >
               <Icon className="w-4 h-4 flex-shrink-0" />
-              <span>{link.label}</span>
+              {!isCollapsed && <span>{link.label}</span>}
             </NavLink>
           );
         })}
       </div>
 
-      <div className="p-4 border-t border-slate-800 text-center text-[10px] text-slate-500">
+      {!isCollapsed && <div className="p-4 border-t border-slate-800 text-center text-[10px] text-slate-500">
         Đồ án tốt nghiệp &copy; PTIT 2025
-      </div>
+      </div>}
     </aside>
   );
 };
