@@ -44,7 +44,7 @@ const AIChatSymptom = () => {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Page Title */}
-      <div className="bg-gradient-to-r from-teal-700 via-sky-800 to-blue-900 rounded-3xl p-8 text-white shadow-xl relative overflow-hidden">
+      <div className="bg-slate-900 rounded-3xl p-8 text-white shadow-xl relative overflow-hidden">
         <div className="relative z-10 max-w-2xl">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-sm text-teal-200 text-xs font-semibold mb-3 border border-white/10">
             <Sparkles className="w-4 h-4" />
@@ -80,7 +80,7 @@ const AIChatSymptom = () => {
             <button
               type="submit"
               disabled={loading || !symptoms.trim()}
-              className="px-6 py-3 bg-gradient-to-r from-teal-600 to-sky-600 text-white font-semibold rounded-xl hover:from-teal-700 hover:to-sky-700 transition flex items-center gap-2 shadow-md shadow-teal-600/20 disabled:opacity-50"
+              className="px-6 py-3 bg-sky-700 text-white font-semibold rounded-xl hover:bg-sky-800 transition-colors flex items-center gap-2 shadow-sm disabled:opacity-50"
             >
               {loading ? (
                 <>
@@ -178,7 +178,7 @@ const AIChatSymptom = () => {
           <div className="pt-2 flex justify-end">
             <button
               onClick={handleBookWithSpecialty}
-              className="px-6 py-3.5 bg-gradient-to-r from-sky-600 to-teal-600 text-white font-semibold rounded-xl hover:from-sky-700 hover:to-teal-700 transition flex items-center gap-2 shadow-lg shadow-sky-600/20"
+              className="px-6 py-3.5 bg-sky-700 text-white font-semibold rounded-xl hover:bg-sky-800 transition-colors flex items-center gap-2 shadow-sm"
             >
               <span>{result.predicted_specialty ? `Đặt lịch khám chuyên khoa ${result.predicted_specialty}` : 'Xem danh sách bác sĩ để tự chọn'}</span>
               <ArrowRight className="w-4 h-4" />

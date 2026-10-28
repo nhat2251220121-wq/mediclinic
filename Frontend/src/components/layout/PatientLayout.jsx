@@ -19,22 +19,23 @@ const PatientLayout = () => {
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
       {/* Top Navigation Bar - giống trang chủ, không có sidebar */}
       <header className="h-16 bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
-        <div className="max-w-7xl h-full mx-auto px-6 flex items-center justify-between">
+        <div className="max-w-7xl h-full mx-auto flex items-center justify-between gap-2 px-3 sm:px-6">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-sky-600 rounded-2xl flex items-center justify-center text-white shadow-md shadow-sky-600/30">
+            <div className="w-9 h-9 bg-sky-700 rounded-xl flex items-center justify-center text-white shadow-sm">
               <ShieldPlus className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="font-black text-lg text-sky-700 tracking-tight leading-none">MediClinic</h1>
-              <span className="text-[10px] text-teal-600 font-semibold uppercase tracking-wider">Hệ thống Y tế thông minh</span>
+              <h1 className="font-semibold text-lg text-sky-800 tracking-tight leading-none">MediClinic</h1>
+              <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Hệ thống Y tế thông minh</span>
             </div>
           </Link>
 
           {/* Nav Links */}
-          <nav className="hidden md:flex items-center gap-6 text-sm font-semibold text-slate-600">
-            <Link to="/" className="hover:text-sky-600 transition">Dịch vụ y tế</Link>
-            <Link to="/#about" className="hover:text-sky-600 transition">Giới thiệu phòng khám</Link>
+          <nav aria-label="Điều hướng công khai" className="flex min-w-0 flex-1 items-center justify-center gap-3 overflow-x-auto px-2 text-[11px] font-semibold text-slate-600 sm:gap-5 sm:text-sm">
+            <Link to="/#services" className="whitespace-nowrap transition-colors hover:text-sky-700">Dịch vụ y tế</Link>
+            <Link to="/about" className="whitespace-nowrap transition-colors hover:text-sky-700">Giới thiệu phòng khám</Link>
+            <Link to="/about#specialties" className="whitespace-nowrap transition-colors hover:text-sky-700">Chuyên khoa</Link>
           </nav>
 
           {/* User Dropdown */}
@@ -86,7 +87,7 @@ const PatientLayout = () => {
       </header>
 
       {/* Page Content */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8">
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 sm:px-6 sm:py-8">
         <Outlet />
       </main>
 

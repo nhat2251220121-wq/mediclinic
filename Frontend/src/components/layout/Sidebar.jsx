@@ -15,8 +15,7 @@ import {
   Bot,
   ShieldPlus,
   Receipt,
-  FileText,
-  ContactRound
+  FileText
 } from 'lucide-react';
 import { X } from 'lucide-react';
 
@@ -45,7 +44,6 @@ const Sidebar = ({ collapsed = false, mobileOpen = false, onClose = () => {} }) 
     { to: '/doctor/examination', icon: Stethoscope, label: 'Khám bệnh & Kê đơn' },
     { to: '/doctor/queue', icon: Users, label: 'Danh sách bệnh nhân' },
     { to: '/doctor/schedule', icon: Clock, label: 'Đăng ký lịch làm việc' },
-    { to: '/doctor/profile', icon: ContactRound, label: 'Hồ sơ của tôi' },
   ];
 
   // Menu Patient (Hình 3.13 -> 3.18)
@@ -96,7 +94,7 @@ const Sidebar = ({ collapsed = false, mobileOpen = false, onClose = () => {} }) 
                   isActive
                     ? 'bg-sky-600 text-white shadow-md shadow-sky-600/30'
                     : link.highlight
-                    ? 'bg-gradient-to-r from-teal-500/20 to-sky-500/20 text-teal-300 border border-teal-500/30 hover:bg-teal-500/30'
+                    ? 'bg-sky-900/60 text-sky-100 border border-sky-700/60 hover:bg-sky-800/70'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
                 }`
               }
