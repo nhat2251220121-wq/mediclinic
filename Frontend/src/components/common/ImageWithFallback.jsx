@@ -11,11 +11,11 @@ export const resolveImageUrl = (value) => {
   catch { return ''; }
 };
 
-const ImageWithFallback = ({ src, alt, className = '', fallback }) => {
+const ImageWithFallback = ({ src, alt, className = '', fallback, style }) => {
   const [failed, setFailed] = useState(!src);
   useEffect(() => setFailed(!src), [src]);
-  if (failed) return <div aria-label={alt} className={`${className} flex items-center justify-center bg-slate-100 text-slate-400`}>{fallback || <UserRound className="h-1/2 w-1/2" />}</div>;
-  return <img src={resolveImageUrl(src)} alt={alt || ''} className={className} onError={() => setFailed(true)} />;
+  if (failed) return <div aria-label={alt} style={style} className={`${className} flex items-center justify-center bg-slate-100 text-slate-400`}>{fallback || <UserRound className="h-1/2 w-1/2" />}</div>;
+  return <img src={resolveImageUrl(src)} alt={alt || ''} style={style} className={className} onError={() => setFailed(true)} />;
 };
 
 export default ImageWithFallback;

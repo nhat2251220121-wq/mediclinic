@@ -34,7 +34,7 @@ const Header = ({ onMenuClick, adminMode = false }) => {
         {onMenuClick && <button type="button" onClick={onMenuClick} aria-label="Thu gọn hoặc mở menu" className="rounded-lg p-2 text-slate-600 hover:bg-slate-100">
           <Menu className="h-5 w-5" />
         </button>}
-        <h2 className="text-xl font-bold bg-gradient-to-r from-sky-600 to-teal-600 bg-clip-text text-transparent">
+        <h2 className="text-xl font-semibold text-slate-800">
           MediClinic Portal
         </h2>
       </div>
@@ -57,13 +57,19 @@ const Header = ({ onMenuClick, adminMode = false }) => {
             </div>}
           </div>
         ) : <>
-          <div className="flex items-center gap-3">
+          {!adminMode && user?.role === 'DOCTOR' ? <button type="button" onClick={() => navigate('/doctor/profile')} aria-label="Mở hồ sơ bác sĩ" className="flex items-center gap-3 rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-sky-600">
             <ImageWithFallback src={user?.avatar_url} alt={user?.full_name} className="w-9 h-9 rounded-full border border-sky-200 object-cover" fallback={<span className="font-bold text-sm">{user?.full_name ? user.full_name.charAt(0).toUpperCase() : <User className="w-5 h-5" />}</span>} />
             <div className="text-left hidden sm:block">
               <div className="text-sm font-semibold text-slate-800 leading-tight">{user?.full_name}</div>
               <div className="mt-0.5">{getRoleBadge(user?.role)}</div>
             </div>
-          </div>
+          </button> : <div className="flex items-center gap-3">
+            <ImageWithFallback src={user?.avatar_url} alt={user?.full_name} className="w-9 h-9 rounded-full border border-sky-200 object-cover" fallback={<span className="font-bold text-sm">{user?.full_name ? user.full_name.charAt(0).toUpperCase() : <User className="w-5 h-5" />}</span>} />
+            <div className="text-left hidden sm:block">
+              <div className="text-sm font-semibold text-slate-800 leading-tight">{user?.full_name}</div>
+              <div className="mt-0.5">{getRoleBadge(user?.role)}</div>
+            </div>
+          </div>}
           <button onClick={handleLogout} title="Đăng xuất" className="flex items-center gap-1.5 text-xs text-rose-600 hover:bg-rose-50 px-3 py-1.5 rounded-lg border border-rose-200 font-medium transition-colors">
             <LogOut className="w-4 h-4" /><span className="hidden md:inline">Đăng xuất</span>
           </button>

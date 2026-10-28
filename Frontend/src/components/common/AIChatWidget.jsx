@@ -165,7 +165,7 @@ const AIChatWidget = () => {
         <div className="relative group">
           <button
             onClick={() => setIsOpen(true)}
-            className="w-14 h-14 bg-gradient-to-br from-sky-600 to-teal-500 hover:from-sky-700 hover:to-teal-600 text-white rounded-full shadow-2xl hover:shadow-sky-500/50 transition-all transform hover:scale-110 flex items-center justify-center"
+            className="w-14 h-14 bg-sky-700 hover:bg-sky-800 text-white rounded-full shadow-xl transition-colors flex items-center justify-center"
             aria-label="Tư vấn triệu chứng cùng AI"
           >
             <div className="relative">
@@ -185,7 +185,7 @@ const AIChatWidget = () => {
       {isOpen && (
         <div className="w-[360px] sm:w-[400px] h-[580px] bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-fadeIn">
           {/* Header */}
-          <div className="bg-gradient-to-r from-sky-700 via-sky-600 to-teal-600 text-white p-4 flex items-center justify-between shadow-sm">
+          <div className="bg-sky-700 text-white p-4 flex items-center justify-between shadow-sm">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20">
                 <Bot className="w-6 h-6 text-white" />
@@ -235,7 +235,7 @@ const AIChatWidget = () => {
                 className={`flex gap-2.5 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 {msg.sender === 'ai' && (
-                  <div className="w-7 h-7 rounded-xl bg-gradient-to-tr from-sky-600 to-teal-500 text-white flex items-center justify-center flex-shrink-0 text-xs shadow-sm">
+                  <div className="w-7 h-7 rounded-xl bg-sky-700 text-white flex items-center justify-center flex-shrink-0 text-xs shadow-sm">
                     <Bot className="w-4 h-4" />
                   </div>
                 )}

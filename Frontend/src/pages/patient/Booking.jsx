@@ -494,7 +494,7 @@ const Booking = () => {
               <button
                 type="button"
                 onClick={handleSavePatientInfo}
-                className="w-full sm:w-auto px-6 py-2.5 bg-gradient-to-r from-sky-600 to-teal-600 hover:from-sky-700 hover:to-teal-700 text-white font-bold text-xs rounded-xl shadow-md shadow-sky-600/20 transition flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full sm:w-auto px-6 py-2.5 bg-sky-700 hover:bg-sky-800 text-white font-semibold text-xs rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Save className="w-4 h-4" />
                 <span>Lưu thông tin người khám</span>
@@ -597,7 +597,7 @@ const Booking = () => {
           <div className="flex justify-end">
             <button
               onClick={handleNextToPayment}
-              className="px-8 py-3.5 bg-gradient-to-r from-sky-600 to-teal-600 text-white font-bold rounded-2xl shadow-xl shadow-sky-600/30 hover:from-sky-700 hover:to-teal-700 transition flex items-center gap-2"
+              className="px-8 py-3.5 bg-sky-700 text-white font-semibold rounded-2xl shadow-md hover:bg-sky-800 transition-colors flex items-center gap-2"
             >
               <span>Xác nhận & Chọn Thanh toán</span>
               <ChevronRight className="w-5 h-5" />

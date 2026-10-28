@@ -11,6 +11,7 @@ import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
 import Unauthorized from './pages/Unauthorized';
 import NotFound from './pages/NotFound';
+import ClinicIntro from './pages/ClinicIntro';
 
 // Patient Pages
 import Booking from './pages/patient/Booking';
@@ -43,6 +44,8 @@ function App() {
         <Routes>
           {/* Public Routes */}
           <Route path="/" element={<HomePage />} />
+          <Route path="/about" element={<ClinicIntro />} />
+          <Route path="/specialties" element={<Navigate to="/about#specialties" replace />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/unauthorized" element={<Unauthorized />} />

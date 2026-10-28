@@ -74,20 +74,21 @@ const HomePage = () => {
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
       {/* Top Navbar theo mẫu đồ án */}
       <header className="h-16 bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
-        <div className="max-w-7xl h-full mx-auto px-6 flex items-center justify-between">
+        <div className="max-w-7xl h-full mx-auto flex items-center justify-between gap-2 px-3 sm:px-6">
           <Link to="/" className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-sky-600 rounded-2xl flex items-center justify-center text-white shadow-md shadow-sky-600/30">
+            <div className="w-9 h-9 bg-sky-700 rounded-xl flex items-center justify-center text-white shadow-sm">
               <ShieldPlus className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="font-black text-lg text-sky-700 tracking-tight leading-none">MediClinic</h1>
-              <span className="text-[10px] text-teal-600 font-semibold uppercase tracking-wider">Hệ thống Y tế thông minh</span>
+              <h1 className="font-semibold text-lg text-sky-800 tracking-tight leading-none">MediClinic</h1>
+              <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Hệ thống Y tế thông minh</span>
             </div>
           </Link>
 
-          <nav className="hidden md:flex items-center gap-6 text-sm font-semibold text-slate-600">
-            <a href="#services" className="hover:text-sky-600 transition">Dịch vụ y tế</a>
-            <a href="#about" className="hover:text-sky-600 transition">Giới thiệu phòng khám</a>
+          <nav aria-label="Điều hướng công khai" className="flex min-w-0 flex-1 items-center justify-center gap-3 overflow-x-auto px-2 text-[11px] font-semibold text-slate-600 sm:gap-5 sm:text-sm">
+            <Link to="/#services" className="whitespace-nowrap transition-colors hover:text-sky-700">Dịch vụ y tế</Link>
+            <Link to="/about" className="whitespace-nowrap transition-colors hover:text-sky-700">Giới thiệu phòng khám</Link>
+            <Link to="/about#specialties" className="whitespace-nowrap transition-colors hover:text-sky-700">Chuyên khoa</Link>
           </nav>
 
           <div className="flex items-center gap-3">
@@ -164,7 +165,7 @@ const HomePage = () => {
           </div>
 
           <h2 className="text-3xl sm:text-4xl font-bold tracking-tight leading-tight">
-            Chăm sóc sức khỏe tại <span className="text-cyan-200">MediClinic</span>
+            Chăm sóc sức khỏe tại <span className="text-white">MediClinic</span>
           </h2>
 
           <p className="text-base text-slate-100 max-w-2xl mx-auto leading-relaxed">
