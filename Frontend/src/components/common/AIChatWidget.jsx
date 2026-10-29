@@ -159,7 +159,7 @@ const AIChatWidget = () => {
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-50">
+    <div className="fixed bottom-3 right-3 z-50 sm:bottom-6 sm:right-6">
       {/* Nút bấm mở Chatbot nổi - Icon tròn với tooltip */}
       {!isOpen && (
         <div className="relative group">
@@ -183,7 +183,7 @@ const AIChatWidget = () => {
 
       {/* Cửa sổ Chatbot y hệt Hình 3.40 (Trang 101-104) */}
       {isOpen && (
-        <div className="w-[360px] sm:w-[400px] h-[580px] bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-fadeIn">
+        <div className="w-[min(25rem,calc(100vw-1.5rem))] h-[min(36rem,calc(100dvh-5rem))] min-h-80 bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-fadeIn">
           {/* Header */}
           <div className="bg-sky-700 text-white p-4 flex items-center justify-between shadow-sm">
             <div className="flex items-center gap-3">

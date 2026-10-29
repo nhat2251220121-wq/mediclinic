@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ChevronDown, History, LogOut, ShieldPlus, User } from 'lucide-react';
+import { ChevronDown, History, LogOut, ShieldPlus, User, Menu, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import PatientNotificationBell from '../common/PatientNotificationBell';
 import ImageWithFallback from '../common/ImageWithFallback';
@@ -8,6 +8,7 @@ import ImageWithFallback from '../common/ImageWithFallback';
 const PublicSiteHeader = () => {
   const { isAuthenticated, user, logout } = useAuth();
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const navigate = useNavigate();
 
   const roleLabel = {
@@ -36,7 +37,7 @@ const PublicSiteHeader = () => {
       : 'Trang quản trị';
 
   return <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur-sm">
-    <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-2 px-3 sm:px-5 lg:px-6">
+    <div className="relative mx-auto flex h-16 max-w-7xl items-center justify-between gap-2 px-3 sm:px-5 lg:px-6">
       <Link to="/" className="flex shrink-0 items-center gap-2.5" aria-label="MediClinic - Trang chủ">
         <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-700 text-white">
           <ShieldPlus className="h-5 w-5" />
@@ -47,13 +48,16 @@ const PublicSiteHeader = () => {
         </span>
       </Link>
 
-      <nav aria-label="Điều hướng công khai" className="flex min-w-0 flex-1 items-center justify-center gap-3 overflow-x-auto px-1 text-[11px] font-medium text-slate-600 sm:gap-5 sm:text-sm">
+      <nav aria-label="Điều hướng công khai" className="hidden min-w-0 flex-1 items-center justify-center gap-3 overflow-x-auto px-1 text-[11px] font-medium text-slate-600 lg:flex lg:gap-5 lg:text-sm">
         <Link to="/#services" className="whitespace-nowrap transition-colors hover:text-sky-700">Dịch vụ y tế</Link>
         <Link to="/about" className="whitespace-nowrap transition-colors hover:text-sky-700">Giới thiệu phòng khám</Link>
         <Link to="/about#specialties" className="whitespace-nowrap transition-colors hover:text-sky-700">Chuyên khoa</Link>
       </nav>
 
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+        <button type="button" aria-label={mobileNavOpen ? 'Đóng điều hướng' : 'Mở điều hướng'} aria-expanded={mobileNavOpen} onClick={() => setMobileNavOpen((open) => !open)} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 lg:hidden">
+          {mobileNavOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        </button>
         {user?.role === 'PATIENT' && <PatientNotificationBell />}
         {isAuthenticated ? <div className="relative">
           <button type="button" aria-expanded={accountMenuOpen} aria-haspopup="menu" onClick={() => setAccountMenuOpen((open) => !open)} className="flex max-w-[12rem] items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left transition-colors hover:bg-slate-100 sm:max-w-[15rem] sm:gap-2">
@@ -68,9 +72,15 @@ const PublicSiteHeader = () => {
                 <p className="truncate text-sm font-semibold text-slate-800">{user?.full_name || 'Tài khoản'}</p>
                 <p className="mt-0.5 text-xs text-slate-500">{roleLabel}</p>
               </div>
-              {accountPath && <Link role="menuitem" to={accountPath} onClick={() => setAccountMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">
-                {user?.role === 'PATIENT' ? <History className="h-4 w-4 text-teal-700" /> : <User className="h-4 w-4 text-teal-700" />}
-                {accountActionLabel}
+              {user?.role === 'PATIENT' ? <>
+                <Link role="menuitem" to="/patient/profile" onClick={() => setAccountMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">
+                  <User className="h-4 w-4 text-teal-700" />Hồ sơ cá nhân
+                </Link>
+                <Link role="menuitem" to="/patient/history" onClick={() => setAccountMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">
+                  <History className="h-4 w-4 text-teal-700" />Lịch sử khám bệnh
+                </Link>
+              </> : accountPath && <Link role="menuitem" to={accountPath} onClick={() => setAccountMenuOpen(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">
+                <User className="h-4 w-4 text-teal-700" />{accountActionLabel}
               </Link>}
               <div className="border-t border-slate-100 pt-1">
                 <button type="button" role="menuitem" onClick={handleLogout} className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm font-medium text-rose-700 transition-colors hover:bg-rose-50"><LogOut className="h-4 w-4" />Đăng xuất</button>
@@ -82,6 +92,11 @@ const PublicSiteHeader = () => {
           <Link to="/register" className="whitespace-nowrap rounded-lg bg-sky-700 px-2.5 py-2 text-[11px] font-semibold text-white transition-colors hover:bg-sky-800 sm:px-3 sm:text-xs">Đăng ký</Link>
         </>}
       </div>
+      {mobileNavOpen && <nav aria-label="Điều hướng di động" className="absolute left-3 right-3 top-full z-50 mt-1 grid gap-1 rounded-xl border border-slate-200 bg-white p-2 text-sm shadow-lg lg:hidden">
+        <Link onClick={() => setMobileNavOpen(false)} to="/#services" className="rounded-lg px-3 py-2.5 text-slate-700 hover:bg-slate-50">Dịch vụ y tế</Link>
+        <Link onClick={() => setMobileNavOpen(false)} to="/about" className="rounded-lg px-3 py-2.5 text-slate-700 hover:bg-slate-50">Giới thiệu phòng khám</Link>
+        <Link onClick={() => setMobileNavOpen(false)} to="/about#specialties" className="rounded-lg px-3 py-2.5 text-slate-700 hover:bg-slate-50">Chuyên khoa</Link>
+      </nav>}
     </div>
   </header>;
 };

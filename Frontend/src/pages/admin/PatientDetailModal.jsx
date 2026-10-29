@@ -159,7 +159,7 @@ const PatientDetailModal = ({ patient, onClose }) => {
                     <table className="w-full min-w-[760px] text-left text-xs">
                       <thead><tr className="border-b border-slate-200 text-[11px] uppercase text-slate-500"><th className="px-3 py-2">Thuốc</th><th className="px-3 py-2">Liều dùng</th><th className="px-3 py-2">Số lượng</th><th className="px-3 py-2">Số ngày</th><th className="px-3 py-2">Thời gian uống</th><th className="px-3 py-2">Quan hệ bữa ăn</th><th className="px-3 py-2">Hướng dẫn thêm</th></tr></thead>
                       <tbody className="divide-y divide-slate-100">{prescriptions.map((item) => <tr key={item.prescription_id} className="align-top text-slate-700">
-                        <td className="px-3 py-3 font-semibold text-slate-900">{missing(item.medicine_name)}{item.medicine_packing ? <span className="block font-normal text-slate-500">{item.medicine_packing}</span> : null}</td>
+                        <td className="px-3 py-3 font-semibold text-slate-900">{missing(item.medicine_name)}<span className="block font-normal text-slate-500">{item.dispensing_source === 'EXTERNAL' ? 'Bệnh nhân tự mua ngoài · không tính tiền thuốc phòng khám' : item.dispensing_source === 'CLINIC' ? 'Phòng khám cấp' : 'Nguồn cấp chưa ghi nhận (đơn cũ)'}</span>{item.medicine_packing ? <span className="block font-normal text-slate-500">{item.medicine_packing}</span> : null}</td>
                         <td className="px-3 py-3">{missing(item.dosage)}</td>
                         <td className="px-3 py-3">{missing(item.quantity)} {item.unit_name || ''}</td>
                         <td className="px-3 py-3">{item.duration == null ? 'Chưa cập nhật' : item.duration}</td>

@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { ArrowDown, ArrowRight, CalendarCheck2, Check, ChevronRight, Compass, ShieldPlus, Stethoscope } from 'lucide-react';
 import axiosClient from '../api/axiosClient';
 import ImageWithFallback from '../components/common/ImageWithFallback';
+import ClinicContact from '../components/common/ClinicContact';
 import PublicSiteHeader from '../components/layout/PublicSiteHeader';
 
 const heroImage = '/assets/clinic-consultation.jpg';
@@ -183,11 +184,8 @@ const ClinicIntro = () => {
         </div>
       </section>
     </main>
-    <footer className="border-t border-slate-200 bg-white px-4 py-7 sm:px-6">
-      <div className="mx-auto flex max-w-7xl flex-col justify-between gap-4 text-sm sm:flex-row sm:items-center">
-        <div><p className="font-semibold text-slate-800">MediClinic</p><p className="mt-1 text-xs text-slate-500">Thông tin dịch vụ và chuyên khoa được tải từ hệ thống.</p></div>
-        <nav aria-label="Liên kết cuối trang" className="flex flex-wrap gap-x-5 gap-y-2 text-xs font-medium text-slate-600"><Link to="/#services" className="hover:text-teal-800">Dịch vụ</Link><a href="#specialties" className="hover:text-teal-800">Chuyên khoa</a><Link to="/#services" className="hover:text-teal-800">Đặt lịch</Link></nav>
-      </div>
+    <footer className="min-w-0 border-t border-slate-200 bg-white px-4 py-7 sm:px-6">
+      <div className="mx-auto max-w-7xl min-w-0"><ClinicContact /></div>
     </footer>
   </div>;
 };

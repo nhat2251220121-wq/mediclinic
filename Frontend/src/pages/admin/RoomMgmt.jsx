@@ -11,6 +11,8 @@ const RoomMgmt = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [formData, setFormData] = useState({ room_number: '', name: '', location: '' });
+  const [pendingDeleteId, setPendingDeleteId] = useState(null);
+  const [actionNotice, setActionNotice] = useState(null);
 
   useEffect(() => {
     fetchRooms();
@@ -55,14 +57,17 @@ const RoomMgmt = () => {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Bạn có chắc muốn xóa phòng khám này?')) return;
+  const handleDelete = async (item) => {
+    if (!window.confirm(`Ngừng sử dụng phòng “${item.name}” (${item.room_number})? Bác sĩ, lịch khám và hồ sơ cũ vẫn được giữ.`)) return;
+    setPendingDeleteId(item.id); setActionNotice(null);
     try {
-      await axiosClient.delete(`/admin/rooms/${id}`);
-      fetchRooms();
+      const result = await axiosClient.delete(`/admin/rooms/${item.id}`);
+      setRooms((current) => current.map((room) => room.id === item.id ? { ...room, is_active: false } : room));
+      setActionNotice({ type: 'success', message: result.message || `Đã ngừng phòng “${item.name}”.` });
+      await fetchRooms();
     } catch (err) {
-      alert('Lỗi xóa phòng khám: ' + (err.message || 'Lỗi server'));
-    }
+      setActionNotice({ type: 'error', message: err.message || 'Không ngừng được phòng khám. Dữ liệu hiện có chưa bị xóa.' });
+    } finally { setPendingDeleteId(null); }
   };
 
   const filtered = rooms.filter(r =>
@@ -72,6 +77,7 @@ const RoomMgmt = () => {
 
   return (
     <div className="space-y-6 font-sans">
+      {actionNotice && <div role="status" className={`rounded-xl border px-4 py-3 text-sm ${actionNotice.type === 'error' ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>{actionNotice.message}</div>}
       <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Quản Lý Phòng Khám & Vị Trí</h2>
@@ -119,17 +125,18 @@ const RoomMgmt = () => {
                 <th className="p-3.5">Tên phòng khám</th>
                 <th className="p-3.5">Vị trí / Tầng</th>
                 <th className="p-3.5 text-center w-36">Số lượng bác sĩ</th>
+                <th className="p-3.5">Trạng thái</th>
                 <th className="p-3.5 text-center w-28">Hành động</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan="5" className="text-center py-8 text-slate-400">Đang tải danh sách phòng...</td>
+                  <td colSpan="6" className="text-center py-8 text-slate-400">Đang tải danh sách phòng...</td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="text-center py-8 text-slate-400">Chưa có dữ liệu phòng khám.</td>
+                  <td colSpan="6" className="text-center py-8 text-slate-400">Chưa có dữ liệu phòng khám.</td>
                 </tr>
               ) : (
                 filtered.map((item) => (
@@ -138,14 +145,15 @@ const RoomMgmt = () => {
                     <td className="p-3.5 font-bold text-slate-900">{item.name}</td>
                     <td className="p-3.5 text-slate-600">{item.location || 'Tầng 1'}</td>
                     <td className="p-3.5 text-center font-semibold text-slate-700"><span>{Number(item.doctor_count) || 0}</span><DoctorCountDetailsButton item={item} relation="room" /></td>
+                    <td className="p-3.5">{item.is_active ? <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-bold text-emerald-700">Đang dùng</span> : <span className="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 font-bold text-slate-600">Đã ngừng</span>}</td>
                     <td className="p-3.5 text-center">
                       <div className="flex items-center justify-center gap-1.5">
                         <button onClick={() => handleOpenEdit(item)} className="p-1.5 text-sky-600 hover:bg-sky-50 rounded-lg">
                           <Edit className="w-3.5 h-3.5" />
                         </button>
-                        <button onClick={() => handleDelete(item.id)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {item.is_active && <button disabled={pendingDeleteId === item.id} title="Ngừng sử dụng; giữ lịch sử liên quan" onClick={() => handleDelete(item)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg disabled:opacity-50">
+                          {pendingDeleteId === item.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                        </button>}
                       </div>
                     </td>
                   </tr>

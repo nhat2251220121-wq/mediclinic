@@ -102,7 +102,7 @@ const getServices = async (req, res, next) => {
     try {
         const [services] = await pool.query(`SELECT svc.id, svc.name, svc.price, svc.description, svc.image_url,
             svc.specialty_id, sp.name AS specialty_name
-            FROM services svc LEFT JOIN specialties sp ON sp.id = svc.specialty_id AND sp.is_active = TRUE
+            FROM services svc JOIN specialties sp ON sp.id = svc.specialty_id AND sp.is_active = TRUE
             WHERE svc.is_active = TRUE ORDER BY svc.name ASC`);
         res.json({ success: true, data: services });
     } catch (error) { next(error); }

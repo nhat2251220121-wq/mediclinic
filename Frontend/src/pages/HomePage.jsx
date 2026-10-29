@@ -3,15 +3,17 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import axiosClient from '../api/axiosClient';
 import ImageWithFallback from '../components/common/ImageWithFallback';
-import { ShieldPlus, Calendar, Bot, History, ChevronDown, LogOut, User, X } from 'lucide-react';
+import { ShieldPlus, Calendar, Bot, History, ChevronDown, LogOut, User, X, Menu } from 'lucide-react';
 import AIChatWidget from '../components/common/AIChatWidget';
 import PatientNotificationBell from '../components/common/PatientNotificationBell';
+import ClinicContact from '../components/common/ClinicContact';
 
 const HomePage = () => {
   const { isAuthenticated, user, logout } = useAuth();
   const navigate = useNavigate();
   const [selectedService, setSelectedService] = useState(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [clinicServices, setClinicServices] = useState([]);
   const [serviceDoctors, setServiceDoctors] = useState([]);
   const [serviceDoctorsLoading, setServiceDoctorsLoading] = useState(false);
@@ -74,24 +76,27 @@ const HomePage = () => {
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
       {/* Top Navbar theo mẫu đồ án */}
       <header className="h-16 bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
-        <div className="max-w-7xl h-full mx-auto flex items-center justify-between gap-2 px-3 sm:px-6">
+        <div className="relative max-w-7xl h-full mx-auto flex items-center justify-between gap-2 px-3 sm:px-6">
           <Link to="/" className="flex items-center gap-3">
             <div className="w-9 h-9 bg-sky-700 rounded-xl flex items-center justify-center text-white shadow-sm">
               <ShieldPlus className="w-5 h-5" />
             </div>
             <div>
               <h1 className="font-semibold text-lg text-sky-800 tracking-tight leading-none">MediClinic</h1>
-              <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Hệ thống Y tế thông minh</span>
+              <span className="hidden text-[10px] text-slate-500 font-medium uppercase tracking-wider sm:block">Hệ thống Y tế thông minh</span>
             </div>
           </Link>
 
-          <nav aria-label="Điều hướng công khai" className="flex min-w-0 flex-1 items-center justify-center gap-3 overflow-x-auto px-2 text-[11px] font-semibold text-slate-600 sm:gap-5 sm:text-sm">
+          <nav aria-label="Điều hướng công khai" className="hidden min-w-0 flex-1 items-center justify-center gap-3 overflow-x-auto px-2 text-[11px] font-semibold text-slate-600 lg:flex lg:gap-5 lg:text-sm">
             <Link to="/#services" className="whitespace-nowrap transition-colors hover:text-sky-700">Dịch vụ y tế</Link>
             <Link to="/about" className="whitespace-nowrap transition-colors hover:text-sky-700">Giới thiệu phòng khám</Link>
             <Link to="/about#specialties" className="whitespace-nowrap transition-colors hover:text-sky-700">Chuyên khoa</Link>
           </nav>
 
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+            <button type="button" aria-label={mobileNavOpen ? 'Đóng điều hướng' : 'Mở điều hướng'} aria-expanded={mobileNavOpen} onClick={() => setMobileNavOpen((open) => !open)} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 lg:hidden">
+              {mobileNavOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
             {isAuthenticated ? (
               /* ===== DROPDOWN USER MENU ===== */
               <>
@@ -116,6 +121,14 @@ const HomePage = () => {
                   <>
                     <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
                     <div className="absolute right-0 mt-2 w-52 bg-white rounded-2xl shadow-xl border border-slate-200 py-2 z-50 animate-fadeIn">
+                      {user?.role === 'PATIENT' && <Link
+                        to="/patient/profile"
+                        onClick={() => setDropdownOpen(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition font-medium"
+                      >
+                        <User className="w-4 h-4 text-sky-600" />
+                        <span>Hồ sơ cá nhân</span>
+                      </Link>}
                       <Link
                         to="/patient/history"
                         onClick={() => setDropdownOpen(false)}
@@ -155,6 +168,11 @@ const HomePage = () => {
               </>
             )}
           </div>
+          {mobileNavOpen && <nav aria-label="Điều hướng di động" className="absolute left-3 right-3 top-full z-50 mt-1 grid gap-1 rounded-xl border border-slate-200 bg-white p-2 text-sm shadow-lg lg:hidden">
+            <Link onClick={() => setMobileNavOpen(false)} to="/#services" className="rounded-lg px-3 py-2.5 text-slate-700 hover:bg-slate-50">Dịch vụ y tế</Link>
+            <Link onClick={() => setMobileNavOpen(false)} to="/about" className="rounded-lg px-3 py-2.5 text-slate-700 hover:bg-slate-50">Giới thiệu phòng khám</Link>
+            <Link onClick={() => setMobileNavOpen(false)} to="/about#specialties" className="rounded-lg px-3 py-2.5 text-slate-700 hover:bg-slate-50">Chuyên khoa</Link>
+          </nav>}
         </div>
       </header>
 
@@ -308,8 +326,8 @@ const HomePage = () => {
       <AIChatWidget />
 
       {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 py-6 px-6 text-center text-sm text-slate-500">
-        <p>&copy; 2026 MediClinic. Thông tin lịch hẹn được xác nhận bởi phòng khám.</p>
+      <footer className="min-w-0 border-t border-slate-200 bg-white px-4 py-6 text-sm text-slate-500 sm:px-6">
+        <div className="mx-auto max-w-7xl min-w-0"><ClinicContact /></div>
       </footer>
     </div>
   );

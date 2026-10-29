@@ -15,9 +15,15 @@ router.get('/dashboard-stats', adminController.getDashboardStats);
 
 // 2. Quản lý Thuốc
 router.get('/medicines', adminController.getMedicines);
+router.get('/medicine-units', adminController.getMedicineUnits);
 router.post('/medicines', adminController.createMedicine);
 router.put('/medicines/:id', adminController.updateMedicine);
 router.delete('/medicines/:id', adminController.deleteMedicine);
+router.get('/medicines/:id/lots', adminController.getMedicineLots);
+router.post('/medicines/:id/lots', adminController.receiveMedicineBatch);
+router.post('/medicines/:id/lots/classify', adminController.classifyLegacyMedicineStock);
+router.post('/medicine-lots/:batchId/adjust', adminController.changeMedicineBatchStock);
+router.post('/medicine-lots/:batchId/write-off', adminController.writeOffMedicineBatch);
 router.get('/work-schedule/slots', adminScheduleController.getWorkSlots);
 router.patch('/work-schedule/slots/:slotId/status', adminScheduleController.setWorkSlotStatus);
 router.get('/meal-relations', adminController.getMealRelations);

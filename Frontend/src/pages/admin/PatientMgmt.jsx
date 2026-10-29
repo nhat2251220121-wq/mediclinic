@@ -7,6 +7,8 @@ const PatientMgmt = () => {
   const [patients, setPatients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [pendingStatusId, setPendingStatusId] = useState(null);
+  const [actionNotice, setActionNotice] = useState(null);
 
   // Modal Sửa bệnh nhân
   const [selectedPatient, setSelectedPatient] = useState(null);
@@ -52,15 +54,20 @@ const PatientMgmt = () => {
 
   const handleToggleActive = async (p) => {
     const newStatus = p.is_active ? 0 : 1;
+    const action = newStatus ? 'mở khóa' : 'khóa';
+    if (!window.confirm(`${action === 'khóa' ? 'Khóa' : 'Mở khóa'} tài khoản bệnh nhân “${p.full_name}”? Bệnh án, lịch sử khám, hóa đơn và thanh toán không bị xóa.`)) return;
+    setPendingStatusId(p.id); setActionNotice(null);
     try {
-      await axiosClient.put(`/admin/patients/${p.id}`, {
+      const result = await axiosClient.put(`/admin/patients/${p.id}`, {
         ...p,
         is_active: newStatus
       });
-      fetchPatients();
+      setPatients((current) => current.map((patient) => patient.id === p.id ? { ...patient, is_active: newStatus } : patient));
+      setActionNotice({ type: 'success', message: result.message || `Đã ${action} tài khoản bệnh nhân “${p.full_name}”.` });
+      await fetchPatients();
     } catch (err) {
-      alert('Lỗi cập nhật trạng thái: ' + (err.message || 'Lỗi server'));
-    }
+      setActionNotice({ type: 'error', message: err.message || 'Không cập nhật được trạng thái tài khoản.' });
+    } finally { setPendingStatusId(null); }
   };
 
   const handleSubmitEdit = async (e) => {
@@ -82,6 +89,7 @@ const PatientMgmt = () => {
 
   return (
     <div className="space-y-6 font-sans">
+      {actionNotice && <div role="status" className={`rounded-xl border px-4 py-3 text-sm ${actionNotice.type === 'error' ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>{actionNotice.message}</div>}
       <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Quản Lý Hồ Sơ Bệnh Nhân</h2>
@@ -158,11 +166,12 @@ const PatientMgmt = () => {
                           <Edit className="w-3.5 h-3.5" />
                         </button>
                         <button
+                          disabled={pendingStatusId === p.id}
                           onClick={() => handleToggleActive(p)}
                           title={p.is_active ? 'Khóa tài khoản' : 'Kích hoạt tài khoản'}
-                          className={`p-1.5 rounded-lg ${p.is_active ? 'text-amber-600 hover:bg-amber-50' : 'text-emerald-600 hover:bg-emerald-50'}`}
+                          className={`p-1.5 rounded-lg disabled:opacity-50 ${p.is_active ? 'text-amber-600 hover:bg-amber-50' : 'text-emerald-600 hover:bg-emerald-50'}`}
                         >
-                          {p.is_active ? <X className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
+                          {pendingStatusId === p.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : p.is_active ? <X className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
                         </button>
                       </div>
                     </td>

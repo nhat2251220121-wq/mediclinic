@@ -68,7 +68,7 @@ const Login = () => {
 
   return (
     <div className="min-h-screen relative flex items-center justify-center p-4 bg-slate-50">
-      <div className="max-w-md w-full bg-white rounded-xl shadow-sm border border-slate-200 p-8 space-y-6 animate-fadeIn">
+      <div className="max-w-md w-full min-w-0 bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-8 space-y-6 animate-fadeIn">
         {/* Logo & Tiêu đề theo Hình 3.12 */}
         <div className="text-center space-y-2">
           <div className="w-12 h-12 bg-sky-600 rounded-2xl flex items-center justify-center text-white mx-auto shadow-md shadow-sky-600/30">
