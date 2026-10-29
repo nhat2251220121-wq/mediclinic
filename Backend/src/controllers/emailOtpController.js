@@ -3,7 +3,7 @@ const nodemailer = require('nodemailer');
 const { pool } = require('../config/db');
 
 const hashOtp = (email, otp) => crypto.createHash('sha256').update(`${email}:${otp}`).digest('hex');
-const validEmail = (value) => typeof value === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+const validEmail = (value) => typeof value === 'string' && value.length <= 150 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 const createTransporter = () => nodemailer.createTransport({
   service: 'gmail',
   auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
@@ -12,20 +12,49 @@ const createTransporter = () => nodemailer.createTransport({
 const sendOtpEmail = async (req, res) => {
   const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
   if (!validEmail(email)) return res.status(400).json({ success: false, message: 'Vui lòng cung cấp email hợp lệ.' });
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    return res.status(503).json({ success: false, message: 'Dịch vụ xác thực email chưa được cấu hình.' });
-  }
+  let connection;
+  let lockAcquired = false;
   try {
-    const [[recent]] = await pool.query(
+    connection = await pool.getConnection();
+    // Serialize concurrent sends for one normalized email without adding a table or changing schema.
+    const lockName = `regotp_${crypto.createHash('sha256').update(email).digest('hex').slice(0, 48)}`;
+    const [[lock]] = await connection.query('SELECT GET_LOCK(?, 5) AS acquired', [lockName]);
+    lockAcquired = Number(lock.acquired) === 1;
+    if (!lockAcquired) return res.status(429).json({ success: false, message: 'Yêu cầu gửi mã đang được xử lý. Vui lòng thử lại sau.' });
+
+    const [[account]] = await connection.query(
+      'SELECT id FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1', [email]
+    );
+    if (account) {
+      return res.status(409).json({
+        success: false,
+        message: 'Email này đã được sử dụng. Hãy đăng nhập; nếu quên mật khẩu, liên hệ quản trị viên để được hỗ trợ khôi phục hoặc dùng email khác.'
+      });
+    }
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      return res.status(503).json({ success: false, message: 'Dịch vụ xác thực email chưa được cấu hình.' });
+    }
+    const [[recent]] = await connection.query(
       'SELECT id FROM email_verifications WHERE email = ? AND created_at > DATE_SUB(NOW(), INTERVAL 60 SECOND) ORDER BY id DESC LIMIT 1', [email]
     );
     if (recent) return res.status(429).json({ success: false, message: 'Vui lòng chờ 60 giây trước khi yêu cầu mã mới.' });
 
     const otp = crypto.randomInt(100000, 1000000).toString();
-    const [insert] = await pool.query(
+    await connection.beginTransaction();
+    const [insert] = await connection.query(
       'INSERT INTO email_verifications (email, otp_hash, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE))',
       [email, hashOtp(email, otp)]
     );
+    // Keep the history, but make every earlier unconsumed code unusable.
+    await connection.query(
+      'UPDATE email_verifications SET consumed_at = NOW() WHERE email = ? AND id <> ? AND consumed_at IS NULL',
+      [email, insert.insertId]
+    );
+    await connection.commit();
+    await connection.query('SELECT RELEASE_LOCK(?)', [lockName]);
+    lockAcquired = false;
+    connection.release();
+    connection = null;
     try {
       await createTransporter().sendMail({
         from: `MediClinic <${process.env.EMAIL_USER}>`, to: email,
@@ -38,8 +67,18 @@ const sendOtpEmail = async (req, res) => {
     }
     return res.json({ success: true, message: 'Mã xác thực đã được gửi. Mã có hiệu lực trong 5 phút.' });
   } catch (error) {
-    console.error('Unable to send registration OTP:', error.message);
+    if (connection) {
+      try { await connection.rollback(); } catch { /* preserve the original failure */ }
+    }
+    console.error('Unable to send registration OTP:', error.code || 'unknown error');
     return res.status(503).json({ success: false, message: 'Không thể gửi email lúc này. Vui lòng thử lại sau.' });
+  } finally {
+    if (connection) {
+      if (lockAcquired) {
+        try { await connection.query('SELECT RELEASE_LOCK(?)', [`regotp_${crypto.createHash('sha256').update(email).digest('hex').slice(0, 48)}`]); } catch { /* connection release clears the lock */ }
+      }
+      connection.release();
+    }
   }
 };
 
@@ -74,7 +113,7 @@ const verifyOtpEmail = async (req, res) => {
       throw error;
     } finally { connection.release(); }
   } catch (error) {
-    console.error('Unable to verify registration OTP:', error.message);
+    console.error('Unable to verify registration OTP:', error.code || 'unknown error');
     return res.status(500).json({ success: false, message: 'Không thể xác thực email lúc này.' });
   }
 };

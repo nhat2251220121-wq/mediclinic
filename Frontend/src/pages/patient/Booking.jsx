@@ -12,6 +12,7 @@ const clinicToday = () => {
     .formatToParts(new Date()).filter((part) => part.type !== 'literal').map(({ type, value }) => [type, value]));
   return `${parts.year}-${parts.month}-${parts.day}`;
 };
+const hasValidSymptoms = (value) => typeof value === 'string' && /[\p{L}\p{N}]/u.test(value.trim());
 
 const generate14Days = () => {
   const days = [];
@@ -42,9 +43,10 @@ const Booking = () => {
   const [availableSlots, setAvailableSlots] = useState([]);
   const [catalogError, setCatalogError] = useState('');
   const [doctorError, setDoctorError] = useState('');
+  const [symptomsError, setSymptomsError] = useState('');
   const [slotsLoading, setSlotsLoading] = useState(false);
   const suggestedSpecialty = location.state?.suggestedSpecialty || '';
-  const [bookingSymptoms, setBookingSymptoms] = useState(location.state?.initialSymptoms || '');
+  const [bookingSymptoms, setBookingSymptoms] = useState(typeof location.state?.initialSymptoms === 'string' ? location.state.initialSymptoms : '');
   const requestedServiceId = new URLSearchParams(location.search).get('service_id') || location.state?.selectedService?.id;
   const [selectedServiceId, setSelectedServiceId] = useState(requestedServiceId ? String(requestedServiceId) : '');
   const passedService = services.find((service) => Number(service.id) === Number(selectedServiceId)) || null;
@@ -194,6 +196,11 @@ const Booking = () => {
   // Bước 1 -> Bước 2
   const handleNextToPayment = (e) => {
     e.preventDefault();
+    if (!hasValidSymptoms(bookingSymptoms)) {
+      setSymptomsError('Vui lòng mô tả triệu chứng hoặc lý do khám bằng chữ hoặc số.');
+      document.getElementById('booking-symptoms')?.focus();
+      return;
+    }
     if (!passedService || !selectedDoctor || !selectedSlotDetails || !patientInfo.fullName.trim() || !patientInfo.phoneNumber.trim()) {
       setProfileError('Vui lòng chọn dịch vụ, bác sĩ, khung giờ và nhập đủ họ tên, số điện thoại.');
       return;
@@ -217,6 +224,12 @@ const Booking = () => {
 
   // Tạo lịch hẹn trên database & mở Thanh Toán VietQR / Tiền mặt
   const handleCreateAppointmentAndPay = async (payMethod) => {
+    if (!hasValidSymptoms(bookingSymptoms)) {
+      setStep(1);
+      setSymptomsError('Vui lòng mô tả triệu chứng hoặc lý do khám bằng chữ hoặc số.');
+      document.getElementById('booking-symptoms')?.focus();
+      return;
+    }
     setIsSubmitting(true);
     try {
       // 1. Gửi request tạo lịch hẹn lên backend API
@@ -225,7 +238,7 @@ const Booking = () => {
         service_id: passedService?.id,
         slot_id: Number(selectedSlot),
         appointment_date: selectedDate,
-        initial_symptoms: bookingSymptoms.trim() || `Khám dịch vụ ${passedService?.name || ''}`,
+        initial_symptoms: bookingSymptoms.trim(),
         ai_predicted_specialty: suggestedSpecialty || null,
         full_name: patientInfo.fullName, phone_number: patientInfo.phoneNumber, dob: patientInfo.dob || null,
         gender: patientInfo.gender, address: patientInfo.address || null, citizen_id: patientInfo.citizenId || null,
@@ -282,7 +295,7 @@ const Booking = () => {
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 space-y-4">
             <span className="text-xs font-bold uppercase tracking-wider text-sky-700 block">Thông tin dịch vụ</span>
             <div>
-              <label htmlFor="booking-service" className="mb-1 block text-xs font-semibold text-slate-600">Dịch vụ khám</label>
+              <label htmlFor="booking-service" className="mb-1 block text-xs font-semibold text-slate-600">Dịch vụ khám *</label>
               <select id="booking-service" value={passedService?.id || ''} onChange={handleServiceChange} disabled={!services.length}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-sm">
                 {!services.length && <option value="">{catalogError || 'Đang tải dịch vụ...'}</option>}
@@ -306,11 +319,11 @@ const Booking = () => {
             </div>
           )}
           <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <label htmlFor="booking-symptoms" className="mb-2 block text-sm font-semibold text-slate-700">Triệu chứng hoặc lý do khám</label>
-            <textarea id="booking-symptoms" rows={3} maxLength={2000} value={bookingSymptoms}
-              onChange={(event) => setBookingSymptoms(event.target.value)}
-              className="w-full rounded-lg border border-slate-300 p-3 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"
-              placeholder="Mô tả ngắn gọn để nhân viên y tế chuẩn bị tiếp nhận" />
+            <label htmlFor="booking-symptoms" className="mb-2 block text-sm font-semibold text-slate-700">* Triệu chứng hoặc lý do khám</label>
+            <textarea id="booking-symptoms" required rows={3} value={bookingSymptoms} aria-invalid={Boolean(symptomsError)}
+              onChange={(event) => { setBookingSymptoms(event.target.value); if (hasValidSymptoms(event.target.value)) setSymptomsError(''); }}
+              className={`w-full rounded-lg border p-3 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100 ${symptomsError ? 'border-rose-400' : 'border-slate-300'}`}
+              placeholder="Mô tả triệu chứng hoặc lý do khám" />
           </div>
 
           {/* Thông tin người khám */}
@@ -597,7 +610,7 @@ const Booking = () => {
           <div className="flex justify-end">
             <button
               onClick={handleNextToPayment}
-              className="px-8 py-3.5 bg-sky-700 text-white font-semibold rounded-2xl shadow-md hover:bg-sky-800 transition-colors flex items-center gap-2"
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-sky-700 px-4 py-3.5 font-semibold text-white shadow-md transition-colors hover:bg-sky-800 sm:w-auto sm:px-8"
             >
               <span>Xác nhận & Chọn Thanh toán</span>
               <ChevronRight className="w-5 h-5" />

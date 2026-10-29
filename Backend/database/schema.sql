@@ -226,6 +226,7 @@ CREATE TABLE `drugs` (
     `unit_id` INT NULL,
     `price` DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
     `stock_quantity` INT NOT NULL DEFAULT 0,
+    `low_stock_threshold` INT UNSIGNED NOT NULL DEFAULT 10,
     `is_active` BOOLEAN NOT NULL DEFAULT TRUE,
     `packing` VARCHAR(100) NULL,
     `side_effects` TEXT NULL,
@@ -281,6 +282,7 @@ CREATE TABLE `prescriptions` (
     `dispensed_at` DATETIME NULL,
     `dispensed_quantity` INT UNSIGNED NOT NULL DEFAULT 0,
     `dispensed_unit_price` DECIMAL(12,2) NULL,
+    `dispensing_source` ENUM('CLINIC','EXTERNAL') NULL DEFAULT NULL,
     `unit_id` INT NULL,
     `meal_relation_id` INT NULL,
     `instructions` TEXT NULL,
@@ -378,8 +380,10 @@ CREATE TABLE `invoice_items` (
 CREATE TABLE `stock_movements` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
     `drug_id` INT NOT NULL,
+    `batch_id` BIGINT UNSIGNED NULL,
     `quantity_delta` INT NOT NULL,
     `reason` VARCHAR(100) NOT NULL,
+    `note` VARCHAR(255) NULL,
     `reference_type` VARCHAR(40) NULL,
     `reference_id` BIGINT NULL,
     `performed_by` INT NULL,
@@ -387,3 +391,23 @@ CREATE TABLE `stock_movements` (
     INDEX `idx_stock_movements_drug_time` (`drug_id`, `created_at`),
     INDEX `idx_stock_movements_reference` (`reference_type`, `reference_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `drug_batches` (
+    `batch_id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `drug_id` INT NOT NULL,
+    `batch_code` VARCHAR(100) NULL,
+    `quantity_received` INT UNSIGNED NOT NULL,
+    `quantity_remaining` INT UNSIGNED NOT NULL,
+    `received_on` DATE NOT NULL,
+    `expires_on` DATE NOT NULL,
+    `created_by` INT NULL,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_drug_batches_drug_expiry` (`drug_id`, `expires_on`, `quantity_remaining`),
+    CONSTRAINT `fk_drug_batches_drug` FOREIGN KEY (`drug_id`) REFERENCES `drugs`(`drug_id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_drug_batches_creator` FOREIGN KEY (`created_by`) REFERENCES `users`(`id`) ON DELETE SET NULL,
+    CONSTRAINT `chk_drug_batches_received` CHECK (`quantity_received` > 0),
+    CONSTRAINT `chk_drug_batches_remaining` CHECK (`quantity_remaining` >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE `stock_movements`
+    ADD CONSTRAINT `fk_stock_movements_batch` FOREIGN KEY (`batch_id`) REFERENCES `drug_batches`(`batch_id`) ON DELETE RESTRICT;

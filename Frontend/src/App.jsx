@@ -16,6 +16,7 @@ import ClinicIntro from './pages/ClinicIntro';
 // Patient Pages
 import Booking from './pages/patient/Booking';
 import MedicalHistory from './pages/patient/MedicalHistory';
+import PatientProfile from './pages/patient/PatientProfile';
 import AIChatSymptom from './pages/patient/AIChatSymptom';
 
 // Doctor Pages
@@ -58,6 +59,7 @@ function App() {
               <Route index element={<Navigate to="/patient/booking" replace />} />
               <Route path="booking" element={<Booking />} />
               <Route path="history" element={<MedicalHistory />} />
+              <Route path="profile" element={<PatientProfile />} />
               <Route path="ai-chat" element={<Navigate to="/patient/booking" replace />} />
             </Route>
           </Route>

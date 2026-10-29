@@ -59,6 +59,8 @@ Migration `011_invoice_prescription_billing_and_cash_request.js` bổ sung trạ
 
 Tham khảo `Backend/.env.example`. Các biến email OTP, Gemini và ngân hàng/SePay chỉ cần đặt khi bật các tích hợp tương ứng. Gemini dùng `GEMINI_MODEL` (mặc định `gemini-3.8-flash` theo danh mục model hiện hành; có thể đổi theo quyền truy cập tài khoản). Khi Gemini không cấu hình hoặc gọi lỗi, kết quả được đánh dấu là gợi ý theo quy tắc dự phòng. Hệ thống không chấp nhận cấu hình payment mẫu; khi thiếu cấu hình, API trả trạng thái chưa sẵn sàng. CORS và Socket.IO chỉ cho phép các origin khai báo ở `FRONTEND_URL`.
 
+Thông tin liên hệ hiển thị ở cuối trang khách hàng lấy từ các biến tùy chọn `VITE_CLINIC_ADDRESS`, `VITE_CLINIC_PHONE`, `VITE_CLINIC_EMAIL` trong `Frontend/.env`. Chỉ các mục có giá trị mới được hiển thị; đặt lại các biến này trong môi trường triển khai và khởi động lại frontend để cập nhật.
+
 SePay webhook dùng API key trong header `Authorization: Apikey …`, chỉ nhận giao dịch tiền vào, kiểm tra tài khoản nhận, mã lịch/hóa đơn, số tiền và ID giao dịch duy nhất. Hãy giả lập webhook trên DB riêng trước khi nối tài khoản ngân hàng thật.
 
 Quick Tunnel Cloudflare chỉ dùng cho development; ai có URL đều có thể gọi backend đang được tunnel. Chỉ bật tunnel khi API đã được bảo vệ, giữ xác thực SePay, và dừng tiến trình tunnel khi xong. Tunnel tạm thời sẽ đổi URL sau lần chạy mới; cập nhật URL webhook trong SePay khi URL đổi. Không đưa URL tunnel vào `FRONTEND_URL` hoặc `VITE_API_BASE_URL`.

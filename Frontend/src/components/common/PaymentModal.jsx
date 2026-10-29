@@ -111,13 +111,13 @@ const PaymentModal = ({ isOpen, onClose, appointmentId, patientName, amount, onS
 
   return <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4">
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => onCloseRef.current?.()} />
-    <div className="relative z-10 w-full max-w-xl space-y-5 rounded-3xl border border-slate-100 bg-white p-6 shadow-2xl sm:p-8">
+    <div className="relative z-10 w-full min-w-0 max-w-xl space-y-5 rounded-3xl border border-slate-100 bg-white p-4 shadow-2xl sm:p-8">
       <header className="flex items-start justify-between border-b border-slate-100 pb-4">
         <div><h3 className="text-lg font-black text-slate-800">Thanh toán viện phí</h3><p className="mt-1 text-xs text-slate-500">{patientName || 'Bệnh nhân'} · Mã lịch #{appointmentId}</p></div>
         <button type="button" aria-label="Đóng" onClick={() => onCloseRef.current?.()} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><X className="h-5 w-5" /></button>
       </header>
 
-      <section className="grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-3 text-xs">
+      <section className="grid grid-cols-1 gap-2 rounded-xl bg-slate-50 p-3 text-xs min-[390px]:grid-cols-3">
         <div><div className="text-slate-500">Tổng hóa đơn</div><strong className="text-slate-900">{money(totalAmount)}</strong></div>
         <div><div className="text-slate-500">Đã thanh toán</div><strong className="text-emerald-700">{money(paidAmount)}</strong></div>
         <div><div className="text-slate-500">Còn thiếu</div><strong className="text-rose-700">{money(dueAmount)}</strong></div>

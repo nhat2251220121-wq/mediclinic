@@ -188,7 +188,7 @@ const MedicalHistory = () => {
       {selectedRecord && (
         <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setSelectedRecord(null)}></div>
-          <div className="relative bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-slate-100 z-10 space-y-6">
+          <div className="relative min-w-0 bg-white rounded-3xl max-w-2xl w-full p-4 sm:p-8 shadow-2xl border border-slate-100 z-10 space-y-6">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div>
                 <h3 className="text-lg font-black text-slate-800">
@@ -222,7 +222,7 @@ const MedicalHistory = () => {
                 <p><strong>Kế hoạch điều trị:</strong> {selectedRecord.medicalRecord.treatment_plan || 'Chưa ghi nhận'}</p>
                 <p><strong>Lời dặn:</strong> {selectedRecord.medicalRecord.advice || 'Chưa ghi nhận'}</p>
                 <p><strong>Tái khám:</strong> {selectedRecord.medicalRecord.follow_up_date ? `${selectedRecord.medicalRecord.follow_up_date}${selectedRecord.medicalRecord.follow_up_notes ? ` · ${selectedRecord.medicalRecord.follow_up_notes}` : ''}` : 'Không hẹn tái khám'}</p>
-                <div><strong>Đơn thuốc</strong>{selectedRecord.medicalRecord.prescriptions?.length ? <div className="mt-2 space-y-2">{selectedRecord.medicalRecord.prescriptions.map((drug) => <div key={drug.prescription_id} className="rounded-xl border bg-white p-3"><p className="font-semibold">{drug.medicine_name}{drug.medicine_generic_name ? ` (${drug.medicine_generic_name})` : ''}</p><p className="text-xs text-slate-600">Số lượng: {drug.quantity} {drug.unit_name || ''} · {drug.dosage} · {drug.duration} ngày</p><p className="text-xs text-slate-600">Quan hệ bữa ăn: {drug.meal_name || 'Không chỉ định'} · {drug.instructions || 'Không có hướng dẫn thêm'}</p></div>)}</div> : <p className="mt-1 text-slate-500">Không có thuốc được kê.</p>}</div>
+                <div><strong>Đơn thuốc</strong>{selectedRecord.medicalRecord.prescriptions?.length ? <div className="mt-2 space-y-2">{selectedRecord.medicalRecord.prescriptions.map((drug) => <div key={drug.prescription_id} className="rounded-xl border bg-white p-3"><p className="font-semibold">{drug.medicine_name}{drug.medicine_generic_name ? ` (${drug.medicine_generic_name})` : ''}</p><p className="text-xs font-medium text-slate-600">{drug.dispensing_source === 'EXTERNAL' ? 'Bệnh nhân tự mua ngoài · không tính tiền thuốc phòng khám' : drug.dispensing_source === 'CLINIC' ? 'Phòng khám cấp' : 'Nguồn cấp chưa ghi nhận (đơn cũ)'}</p><p className="text-xs text-slate-600">Số lượng: {drug.quantity} {drug.unit_name || ''} · {drug.dosage} · {drug.duration} ngày</p><p className="text-xs text-slate-600">Quan hệ bữa ăn: {drug.meal_name || 'Không chỉ định'} · {drug.instructions || 'Không có hướng dẫn thêm'}</p></div>)}</div> : <p className="mt-1 text-slate-500">Không có thuốc được kê.</p>}</div>
               </> : <p className="text-slate-500">Chưa có bệnh án được lưu cho lần khám này.</p>}
             </section>
 
@@ -236,7 +236,7 @@ const MedicalHistory = () => {
             </section>}
 
             <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs space-y-2">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <span className="text-slate-400 block">Bác sĩ phụ trách:</span>
                   <strong className="text-slate-800">{selectedRecord.doctor_name}</strong>

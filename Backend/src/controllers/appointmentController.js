@@ -17,10 +17,19 @@ const isRealISODate = (value) => {
 };
 
 const createAppointment = async (req, res, next) => {
+  const { initial_symptoms, service_id } = req.body;
+  const cleanSymptoms = typeof initial_symptoms === 'string' ? initial_symptoms.trim() : '';
+  if (!/[\p{L}\p{N}]/u.test(cleanSymptoms)) {
+    return res.status(400).json({ success: false, message: 'Vui lòng mô tả triệu chứng hoặc lý do khám bằng chữ hoặc số.' });
+  }
+  const serviceId = Number(service_id);
+  if (!Number.isSafeInteger(serviceId) || serviceId < 1) {
+    return res.status(400).json({ success: false, message: 'Vui lòng chọn dịch vụ khám để xác định đúng chi phí.' });
+  }
   const connection = await pool.getConnection();
   try {
     const patient_id = req.user.id;
-    const { doctor_id, service_id, slot_id, appointment_date, full_name, phone_number, dob, gender, address, insurance_code, citizen_id, initial_symptoms, ai_predicted_specialty, notes } = req.body;
+    const { doctor_id, slot_id, appointment_date, full_name, phone_number, dob, gender, address, insurance_code, citizen_id, initial_symptoms, ai_predicted_specialty, notes } = req.body;
     if (!Number.isInteger(Number(doctor_id)) || !Number.isInteger(Number(slot_id)) || !appointment_date) {
       return res.status(400).json({ success: false, message: 'Vui lòng chọn bác sĩ, ngày và khung giờ có sẵn.' });
     }
@@ -33,7 +42,7 @@ const createAppointment = async (req, res, next) => {
 
     await connection.beginTransaction();
     const [doctors] = await connection.query(
-      `SELECT d.id, d.specialty_id, d.consultation_fee FROM doctors d JOIN users u ON u.id = d.user_id
+      `SELECT d.id, d.specialty_id FROM doctors d JOIN users u ON u.id = d.user_id
        WHERE d.id = ? AND d.is_active = TRUE AND u.is_active = TRUE FOR UPDATE`, [doctor_id]
     );
     if (!doctors.length) {
@@ -59,31 +68,30 @@ const createAppointment = async (req, res, next) => {
       const currentTime = `${hour}:${minute}`;
       if (scheduled[0].start_time <= currentTime) { await connection.rollback(); return res.status(400).json({ success: false, message: 'Không thể đặt khung giờ đã qua.' }); }
     }
-    let serviceFee = Number(doctors[0].consultation_fee);
-    let serviceName = 'Phí khám';
-    if (service_id !== undefined && service_id !== null) {
-      const [services] = await connection.query('SELECT id, name, price, specialty_id FROM services WHERE id = ? AND is_active = TRUE FOR UPDATE', [service_id]);
-      if (!services.length) {
-        await connection.rollback();
-        return res.status(400).json({ success: false, message: 'Dịch vụ không còn được cung cấp.' });
-      }
-      if (!services[0].specialty_id) {
-        await connection.rollback();
-        return res.status(409).json({ success: false, message: 'Dịch vụ chưa được gán chuyên khoa. Vui lòng liên hệ quản trị viên.' });
-      }
-      const [activeSpecialties] = await connection.query(
-        'SELECT id FROM specialties WHERE id = ? AND is_active = TRUE FOR UPDATE', [services[0].specialty_id]
-      );
-      if (!activeSpecialties.length) {
-        await connection.rollback();
-        return res.status(409).json({ success: false, message: 'Chuyên khoa của dịch vụ hiện không hoạt động. Vui lòng liên hệ quản trị viên.' });
-      }
-      if (Number(services[0].specialty_id) !== Number(doctors[0].specialty_id)) {
-        await connection.rollback();
-        return res.status(400).json({ success: false, message: 'Bác sĩ đã chọn không thuộc chuyên khoa của dịch vụ này.' });
-      }
-      serviceFee = Number(services[0].price);
-      serviceName = services[0].name;
+    const [services] = await connection.query('SELECT id, name, price, specialty_id FROM services WHERE id = ? AND is_active = TRUE FOR UPDATE', [serviceId]);
+    if (!services.length) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, message: 'Dịch vụ không còn được cung cấp.' });
+    }
+    if (!services[0].specialty_id) {
+      await connection.rollback();
+      return res.status(409).json({ success: false, message: 'Dịch vụ chưa được gán chuyên khoa. Vui lòng liên hệ quản trị viên.' });
+    }
+    const serviceFee = Number(services[0].price);
+    if (!Number.isFinite(serviceFee) || serviceFee < 0) {
+      await connection.rollback();
+      return res.status(409).json({ success: false, message: 'Dịch vụ chưa có giá hợp lệ. Vui lòng liên hệ quản trị viên.' });
+    }
+    const [activeSpecialties] = await connection.query(
+      'SELECT id FROM specialties WHERE id = ? AND is_active = TRUE FOR UPDATE', [services[0].specialty_id]
+    );
+    if (!activeSpecialties.length) {
+      await connection.rollback();
+      return res.status(409).json({ success: false, message: 'Chuyên khoa của dịch vụ hiện không hoạt động. Vui lòng liên hệ quản trị viên.' });
+    }
+    if (Number(services[0].specialty_id) !== Number(doctors[0].specialty_id)) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, message: 'Bác sĩ đã chọn không thuộc chuyên khoa của dịch vụ này.' });
     }
     const [existing] = await connection.query(
       `SELECT appointment_id FROM appointments WHERE slot_id = ? AND status <> 'CANCELLED' LIMIT 1`,
@@ -97,9 +105,9 @@ const createAppointment = async (req, res, next) => {
       `INSERT INTO appointments (patient_id, doctor_id, service_id, shift_employee_id, slot_id, appointment_date, time_slot,
        full_name, phone_number, dob, gender, address, insurance_code, citizen_id, initial_symptoms, ai_predicted_specialty, notes, status)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
-      [patient_id, doctor_id, service_id || null, scheduled[0].shift_employee_id, scheduled[0].slot_id, appointment_date, time_slot,
+      [patient_id, doctor_id, serviceId, scheduled[0].shift_employee_id, scheduled[0].slot_id, appointment_date, time_slot,
         full_name || null, phone_number || null, dob || null, gender || null, address || null, insurance_code || null, citizen_id || null,
-        initial_symptoms || null, ai_predicted_specialty || null, notes || null]
+        cleanSymptoms, ai_predicted_specialty || null, notes || null]
     );
     const [bookedSlot] = await connection.query("UPDATE shift_time_slots SET status = 'BOOKED' WHERE id = ? AND status = 'AVAILABLE'", [scheduled[0].slot_id]);
     if (bookedSlot.affectedRows !== 1) throw Object.assign(new Error('Khung giờ vừa được đặt. Vui lòng chọn khung giờ khác.'), { statusCode: 409 });
@@ -109,12 +117,12 @@ const createAppointment = async (req, res, next) => {
     );
     await connection.query(
       `INSERT INTO invoice_items (invoice_id, item_type, item_reference_id, description, quantity, unit_price, line_total)
-       VALUES (?, 'SERVICE', ?, ?, 1, ?, ?)`, [invoice.insertId, service_id || null, serviceName, serviceFee, serviceFee]
+       VALUES (?, 'SERVICE', ?, ?, 1, ?, ?)`, [invoice.insertId, serviceId, services[0].name, serviceFee, serviceFee]
     );
     await connection.commit();
     return res.status(201).json({
       success: true, message: 'Đặt lịch thành công. Phòng khám sẽ xác nhận lịch hẹn.',
-      data: { id: result.insertId, appointment_id: result.insertId, invoice_id: invoice.insertId, patient_id, doctor_id: Number(doctor_id), service_id: service_id || null, appointment_date, time_slot, status: 'PENDING', amount: serviceFee }
+      data: { id: result.insertId, appointment_id: result.insertId, invoice_id: invoice.insertId, patient_id, doctor_id: Number(doctor_id), service_id: serviceId, appointment_date, time_slot, status: 'PENDING', amount: serviceFee }
     });
   } catch (error) {
     await connection.rollback();
