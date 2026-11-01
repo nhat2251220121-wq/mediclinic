@@ -3,6 +3,7 @@ import { MessageSquare, X, Send, Bot, Sparkles, User, Calendar, Clock, DollarSig
 import axiosClient from '../../api/axiosClient';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { isSymptomBookingAllowed } from '../../utils/symptomAssistant.mjs';
 
 const AIChatWidget = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -11,11 +12,13 @@ const AIChatWidget = () => {
     {
       id: 1,
       sender: 'ai',
-      text: 'Xin chào. Tôi có thể hỗ trợ định hướng chuyên khoa từ triệu chứng và đưa bạn tới trang đặt lịch. Không nhập thông tin định danh; nếu bật Gemini, nội dung có thể được gửi tới nhà cung cấp AI. Gợi ý không thay thế chẩn đoán của nhân viên y tế.',
+      text: 'Xin chào. Tôi có thể hỗ trợ định hướng chuyên khoa. Khi AI được sử dụng, mô tả sẽ được gửi tới OpenAI để xử lý; MediClinic không lưu thành lịch sử trợ lý. Không nhập thông tin định danh. Gợi ý không thay thế chẩn đoán của nhân viên y tế.',
       time: 'Vừa xong'
     }
   ]);
   const [loading, setLoading] = useState(false);
+  const [retryText, setRetryText] = useState('');
+  const [emergencyBlocked, setEmergencyBlocked] = useState(false);
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const messagesEndRef = useRef(null);
@@ -32,7 +35,7 @@ const AIChatWidget = () => {
 
   const handleSend = async (e) => {
     e.preventDefault();
-    if (!input.trim() || loading) return;
+    if (!input.trim() || input.length > 2000 || loading) return;
 
     const userText = input.trim();
     const userMsg = {
@@ -45,6 +48,7 @@ const AIChatWidget = () => {
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
     setLoading(true);
+    setRetryText('');
 
     try {
       // 1. Phân tích nội dung tin nhắn để phản hồi phù hợp phong cách AI Agent của đồ án
@@ -105,14 +109,12 @@ const AIChatWidget = () => {
         }
       }
 
-      // Hỏi về triệu chứng hoặc dịch vụ y tế -> Gọi API AI phân loại triệu chứng
+      // Stateless classification: the symptom text is not persisted as chat history.
       const res = await axiosClient.post('/ai/classify-symptom', { symptoms: userText });
       if (res.success && res.data) {
         const d = res.data;
-        let reply = `${d.recommendation_source === 'AI' ? 'Gợi ý từ AI' : 'Gợi ý theo quy tắc dự phòng'}:\n\n• Chuyên khoa đề xuất: ${d.predicted_specialty || 'Chưa tìm được chuyên khoa phù hợp'}\n• Mức độ khẩn cấp: ${d.urgency_text || d.urgency_level}\n\nLời khuyên: ${d.initial_advice}\n\n${d.disclaimer || 'Gợi ý này không thay thế chẩn đoán y khoa.'}`;
-        if (d.possible_conditions && d.possible_conditions.length > 0) {
-          reply += `\n\n📌 Các khả năng liên quan: ${d.possible_conditions.join(', ')}`;
-        }
+        setEmergencyBlocked(d.urgency_level === 'EMERGENCY');
+        const reply = `${d.recommendation_source === 'AI' ? 'Gợi ý từ AI' : 'Gợi ý theo quy tắc dự phòng'}:\n\n• Chuyên khoa: ${d.predicted_specialty || 'Chưa xác định — bạn có thể tự chọn dịch vụ'}\n• Mức độ: ${d.urgency_level} — ${d.urgency_text}\n\nLời khuyên ban đầu: ${d.initial_advice}${d.follow_up_questions?.length ? `\n\nCâu hỏi cần làm rõ:\n${d.follow_up_questions.map((question) => `• ${question}`).join('\n')}\nBạn có thể bổ sung câu trả lời vào mô tả rồi gửi lại.` : ''}\n\n${d.disclaimer}`;
 
         setMessages((prev) => [
           ...prev,
@@ -120,10 +122,10 @@ const AIChatWidget = () => {
             id: Date.now() + 1,
             sender: 'ai',
             text: reply,
-            ...(d.predicted_specialty ? { action: {
-              text: `Đặt lịch khám chuyên khoa ${d.predicted_specialty}`,
+            ...(isSymptomBookingAllowed(d) ? { action: {
+              text: d.predicted_specialty ? `Tiếp tục đặt lịch · ${d.predicted_specialty}` : 'Tự chọn dịch vụ đặt lịch',
               link: '/patient/booking',
-              state: { suggestedSpecialty: d.predicted_specialty, initialSymptoms: userText }
+              state: { suggestedSpecialty: d.predicted_specialty || '', suggestedSpecialtyId: d.specialty_id || null }
             } } : {}),
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           }
@@ -140,12 +142,13 @@ const AIChatWidget = () => {
         ]);
       }
     } catch (err) {
+      setRetryText(userText);
       setMessages((prev) => [
         ...prev,
         {
           id: Date.now() + 1,
           sender: 'ai',
-          text: 'Xin lỗi, hiện tại kết nối trợ lý AI đang bận. Bạn vui lòng thử lại sau vài giây nhé!',
+            text: 'Không thể xử lý mô tả lúc này. Bạn có thể thử lại sau.',
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]);
@@ -206,7 +209,7 @@ const AIChatWidget = () => {
           </div>
 
           {/* Gợi ý câu hỏi nhanh */}
-          <div className="bg-slate-50 px-3 py-2 border-b border-slate-100 flex gap-2 overflow-x-auto text-xs no-scrollbar">
+          {!emergencyBlocked && <div className="bg-slate-50 px-3 py-2 border-b border-slate-100 flex gap-2 overflow-x-auto text-xs no-scrollbar">
             <button
               onClick={() => handleQuickQuestion('Tôi bị đau răng ê buốt, nên khám gì?')}
               className="px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-slate-600 hover:text-sky-600 hover:border-sky-300 whitespace-nowrap transition"
@@ -225,7 +228,7 @@ const AIChatWidget = () => {
             >
               👨‍⚕️ Lịch trực bác sĩ
             </button>
-          </div>
+          </div>}
 
           {/* Body tin nhắn */}
           <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-slate-50/50 text-sm">
@@ -252,7 +255,7 @@ const AIChatWidget = () => {
                   </div>
 
                   {/* Nút hành động nếu AI đề xuất */}
-                  {msg.action && (
+                  {msg.action && !emergencyBlocked && (
                     <button
                       onClick={() => {
                         navigate(msg.action.link, { state: msg.action.state });
@@ -287,19 +290,21 @@ const AIChatWidget = () => {
           <form onSubmit={handleSend} className="p-3 bg-white border-t border-slate-100 flex items-center gap-2">
             <input
               type="text"
+              maxLength={2000}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Nhập câu hỏi của bạn..."
+              placeholder="Mô tả triệu chứng (tối đa 2.000 ký tự)..."
               className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition-all"
             />
             <button
               type="submit"
-              disabled={loading || !input.trim()}
+              disabled={loading || !input.trim() || input.length > 2000}
               className="w-10 h-10 rounded-2xl bg-sky-600 hover:bg-sky-700 text-white flex items-center justify-center transition disabled:opacity-40 shadow-sm"
             >
               <Send className="w-4 h-4" />
             </button>
           </form>
+          {retryText && !loading && <div className="px-3 pb-2 bg-white"><button onClick={() => { setInput(retryText); setRetryText(''); }} className="text-xs font-semibold text-teal-800 underline">Thử lại mô tả vừa gửi</button></div>}
         </div>
       )}
     </div>

@@ -2,11 +2,17 @@
   "name": "mediclinic-backend",
   "version": "1.0.0",
   "description": "Backend API for MediClinic - Clinic Management & AI Symptom Classification",
+  "engines": {
+    "node": ">=18"
+  },
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "migrate": "node database/migrate-cli.js",
+    "test": "node --test test/*.test.js",
+    "test:cancellation-db": "node test/cancellation-db.integration.js",
+    "test:password-reset-db": "node test/password-reset-db.integration.js",
     "create-admin": "node scripts/create-admin.js",
     "webhook-gateway": "node scripts/webhook-gateway.js"
   },
@@ -16,12 +22,11 @@
     "mysql",
     "clinic",
     "ai",
-    "gemini"
+    "openai"
   ],
   "author": "MediClinic Team",
   "license": "ISC",
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
