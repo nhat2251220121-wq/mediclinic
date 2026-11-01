@@ -2,13 +2,15 @@ import React, { useEffect, useRef, useState } from 'react';
 import axiosClient from '../../api/axiosClient';
 import { socket } from '../../api/socket';
 import { useAuth } from '../../context/AuthContext';
-import { QrCode, Banknote, Copy, CheckCircle2, X, Loader2, AlertCircle, Check, RefreshCw } from 'lucide-react';
+import { QrCode, Banknote, Copy, CheckCircle2, X, Loader2, Check, RefreshCw } from 'lucide-react';
 
 const money = (value) => `${Number(value || 0).toLocaleString('vi-VN')} ₫`;
 
-const PaymentModal = ({ isOpen, onClose, appointmentId, patientName, amount, onSuccess }) => {
+const PaymentModal = ({ isOpen, onClose, appointmentId, patientName, amount, onSuccess, lockedPaymentMethod = null, initialPaymentMethod = null }) => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState('QR');
+  const defaultMethod = lockedPaymentMethod || initialPaymentMethod;
+  const initialTab = defaultMethod === 'CASH' ? 'CASH' : 'QR';
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [copiedField, setCopiedField] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
   const [successInfo, setSuccessInfo] = useState(null);
@@ -22,6 +24,7 @@ const PaymentModal = ({ isOpen, onClose, appointmentId, patientName, amount, onS
   const qrDataRef = useRef(null);
   const reloadQrRef = useRef(null);
   const successHandled = useRef(false);
+  const activeTabRef = useRef(initialTab);
   const onSuccessRef = useRef(onSuccess);
   const onCloseRef = useRef(onClose);
   onSuccessRef.current = onSuccess;
@@ -33,7 +36,9 @@ const PaymentModal = ({ isOpen, onClose, appointmentId, patientName, amount, onS
     qrSequence.current += 1;
     successHandled.current = false;
     let pollId;
-    setActiveTab('QR'); setCopiedField(''); setIsSuccess(false); setSuccessInfo(null);
+    const startingTab = (lockedPaymentMethod || initialPaymentMethod) === 'CASH' ? 'CASH' : 'QR';
+    activeTabRef.current = startingTab;
+    setActiveTab(startingTab); setCopiedField(''); setIsSuccess(false); setSuccessInfo(null);
     setSummary(null); setQrData(null); qrDataRef.current = null; setQrError(''); setStatusError(''); setCashSubmitting(false);
 
     const loadQr = async () => {
@@ -71,12 +76,12 @@ const PaymentModal = ({ isOpen, onClose, appointmentId, patientName, amount, onS
           if (pollId) window.clearInterval(pollId);
           socket.off('payment_updated', handlePaymentUpdated);
           onSuccessRef.current?.();
-        } else if (due > 0 && Number(qrDataRef.current?.amount) !== due) {
+        } else if (activeTabRef.current === 'QR' && due > 0 && qrDataRef.current && Number(qrDataRef.current.amount) !== due) {
           if (qrDataRef.current) {
             qrDataRef.current = null;
             setQrData(null);
           }
-          loadQr();
+          if (activeTabRef.current === 'QR' && lockedPaymentMethod !== 'CASH') loadQr();
         }
       } catch (error) { if (active) setStatusError(error.message || 'Không kết nối được để xác minh thanh toán.'); }
     };
@@ -86,7 +91,7 @@ const PaymentModal = ({ isOpen, onClose, appointmentId, patientName, amount, onS
     };
     socket.on('payment_updated', handlePaymentUpdated);
     pollId = window.setInterval(checkStatus, 5000);
-    loadQr();
+    if (startingTab === 'QR' && lockedPaymentMethod !== 'CASH') loadQr();
     checkStatus();
     return () => {
       active = false;
@@ -95,7 +100,7 @@ const PaymentModal = ({ isOpen, onClose, appointmentId, patientName, amount, onS
       socket.off('payment_updated', handlePaymentUpdated);
       if (pollId) window.clearInterval(pollId);
     };
-  }, [isOpen, appointmentId]);
+  }, [isOpen, appointmentId, lockedPaymentMethod, initialPaymentMethod]);
 
   if (!isOpen) return null;
 
@@ -130,10 +135,10 @@ const PaymentModal = ({ isOpen, onClose, appointmentId, patientName, amount, onS
         <p className="font-semibold text-emerald-700">{money(successInfo?.paidAmount)} / {money(successInfo?.totalAmount)}</p>
         <button type="button" onClick={() => onCloseRef.current?.()} className="rounded-lg bg-slate-900 px-5 py-2 text-sm font-semibold text-white">Đóng</button>
       </div> : <>
-        <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1">
-          <button type="button" onClick={() => setActiveTab('QR')} className={`rounded-lg px-3 py-2 text-sm font-semibold ${activeTab === 'QR' ? 'bg-white text-sky-700 shadow-sm' : 'text-slate-500'}`}><QrCode className="mr-1 inline h-4 w-4" />Chuyển khoản</button>
-          <button type="button" onClick={() => setActiveTab('CASH')} className={`rounded-lg px-3 py-2 text-sm font-semibold ${activeTab === 'CASH' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500'}`}><Banknote className="mr-1 inline h-4 w-4" />Tiền mặt tại quầy</button>
-        </div>
+        {lockedPaymentMethod === 'BANK_TRANSFER' ? <p className="rounded-lg bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800">Phương thức đã chọn: QR / chuyển khoản · chờ webhook SePay xác nhận</p> : <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1">
+          <button type="button" onClick={() => { activeTabRef.current = 'QR'; setActiveTab('QR'); reloadQrRef.current?.(); }} className={`rounded-lg px-3 py-2 text-sm font-semibold ${activeTab === 'QR' ? 'bg-white text-sky-700 shadow-sm' : 'text-slate-500'}`}><QrCode className="mr-1 inline h-4 w-4" />Chuyển khoản</button>
+          <button type="button" onClick={() => { activeTabRef.current = 'CASH'; setActiveTab('CASH'); }} className={`rounded-lg px-3 py-2 text-sm font-semibold ${activeTab === 'CASH' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500'}`}><Banknote className="mr-1 inline h-4 w-4" />Tiền mặt tại quầy</button>
+        </div>}
 
         {activeTab === 'QR' && <div className="space-y-4">
           {qrLoading && !qrData && <div role="status" className="flex items-center gap-2 rounded-lg bg-slate-50 p-4 text-sm text-slate-600"><Loader2 className="h-4 w-4 animate-spin" />Đang tải thông tin thanh toán…</div>}

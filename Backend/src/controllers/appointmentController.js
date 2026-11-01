@@ -17,7 +17,7 @@ const isRealISODate = (value) => {
 };
 
 const createAppointment = async (req, res, next) => {
-  const { initial_symptoms, service_id } = req.body;
+  const { initial_symptoms, service_id, payment_method } = req.body;
   const cleanSymptoms = typeof initial_symptoms === 'string' ? initial_symptoms.trim() : '';
   if (!/[\p{L}\p{N}]/u.test(cleanSymptoms)) {
     return res.status(400).json({ success: false, message: 'Vui lòng mô tả triệu chứng hoặc lý do khám bằng chữ hoặc số.' });
@@ -25,6 +25,9 @@ const createAppointment = async (req, res, next) => {
   const serviceId = Number(service_id);
   if (!Number.isSafeInteger(serviceId) || serviceId < 1) {
     return res.status(400).json({ success: false, message: 'Vui lòng chọn dịch vụ khám để xác định đúng chi phí.' });
+  }
+  if (!['CASH', 'BANK_TRANSFER'].includes(payment_method)) {
+    return res.status(400).json({ success: false, message: 'Vui lòng chọn phương thức thanh toán tiền mặt hoặc QR/chuyển khoản.' });
   }
   const connection = await pool.getConnection();
   try {
@@ -113,7 +116,7 @@ const createAppointment = async (req, res, next) => {
     if (bookedSlot.affectedRows !== 1) throw Object.assign(new Error('Khung giờ vừa được đặt. Vui lòng chọn khung giờ khác.'), { statusCode: 409 });
     const [invoice] = await connection.query(
       `INSERT INTO invoices (appointment_id, patient_id, service_fee, medicine_fee, total_amount, payment_status, payment_method)
-       VALUES (?, ?, ?, 0, ?, 'UNPAID', 'CASH')`, [result.insertId, patient_id, serviceFee, serviceFee]
+       VALUES (?, ?, ?, 0, ?, 'UNPAID', ?)`, [result.insertId, patient_id, serviceFee, serviceFee, payment_method]
     );
     await connection.query(
       `INSERT INTO invoice_items (invoice_id, item_type, item_reference_id, description, quantity, unit_price, line_total)
@@ -122,7 +125,7 @@ const createAppointment = async (req, res, next) => {
     await connection.commit();
     return res.status(201).json({
       success: true, message: 'Đặt lịch thành công. Phòng khám sẽ xác nhận lịch hẹn.',
-      data: { id: result.insertId, appointment_id: result.insertId, invoice_id: invoice.insertId, patient_id, doctor_id: Number(doctor_id), service_id: serviceId, appointment_date, time_slot, status: 'PENDING', amount: serviceFee }
+      data: { id: result.insertId, appointment_id: result.insertId, invoice_id: invoice.insertId, patient_id, doctor_id: Number(doctor_id), service_id: serviceId, appointment_date, time_slot, status: 'PENDING', amount: serviceFee, payment_method }
     });
   } catch (error) {
     await connection.rollback();
@@ -135,7 +138,15 @@ const getAppointments = async (req, res, next) => {
   try {
     const { role, id: userId } = req.user;
     let query = `SELECT a.appointment_id AS id, a.appointment_id, DATE_FORMAT(a.appointment_date, '%Y-%m-%d') AS appointment_date, a.time_slot, a.status,
-      COALESCE(i.payment_status, 'UNPAID') AS payment_status, a.initial_symptoms, a.ai_predicted_specialty, a.notes, a.created_at,
+      COALESCE(i.payment_status, 'UNPAID') AS payment_status, i.payment_method, i.invoice_status,
+      i.total_amount AS invoice_total_amount,
+      COALESCE((SELECT SUM(pay.amount) FROM payments pay WHERE pay.invoice_id = i.id AND pay.payment_status = 'PAID'), 0) AS amount_paid,
+      GREATEST(COALESCE(i.total_amount, 0) - COALESCE((SELECT SUM(pay.amount) FROM payments pay WHERE pay.invoice_id = i.id AND pay.payment_status = 'PAID'), 0), 0) AS amount_due,
+      (SELECT cr.id FROM appointment_cancellation_requests cr WHERE cr.appointment_id = a.appointment_id ORDER BY cr.requested_at DESC, cr.id DESC LIMIT 1) AS cancellation_request_id,
+      (SELECT cr.status FROM appointment_cancellation_requests cr WHERE cr.appointment_id = a.appointment_id ORDER BY cr.requested_at DESC, cr.id DESC LIMIT 1) AS cancellation_request_status,
+      (SELECT cr.refund_status FROM appointment_cancellation_requests cr WHERE cr.appointment_id = a.appointment_id ORDER BY cr.requested_at DESC, cr.id DESC LIMIT 1) AS refund_status,
+      (SELECT cr.decision_note FROM appointment_cancellation_requests cr WHERE cr.appointment_id = a.appointment_id ORDER BY cr.requested_at DESC, cr.id DESC LIMIT 1) AS cancellation_decision_note,
+      a.initial_symptoms, a.ai_predicted_specialty, a.notes, a.created_at,
       p.id AS patient_id, p.full_name AS patient_name, p.phone AS patient_phone,
       d.id AS doctor_id, du.full_name AS doctor_name, s.name AS specialty_name, svc.name AS service_name, r.room_number, r.name AS room_name
       FROM appointments a JOIN users p ON a.patient_id = p.id JOIN doctors d ON a.doctor_id = d.id
@@ -186,12 +197,15 @@ const updateAppointmentStatus = async (req, res, next) => {
     const { id } = req.params;
     const { status } = req.body;
     const { role, id: userId } = req.user;
-    if (!['CONFIRMED', 'COMPLETED', 'CANCELLED'].includes(status)) {
-      return res.status(400).json({ success: false, message: 'Trạng thái yêu cầu không hợp lệ.' });
+    if (status === 'CONFIRMED') {
+      return res.status(409).json({ success: false, message: 'Lịch chỉ được tự xác nhận khi backend ghi nhận hóa đơn đã thanh toán đủ.' });
+    }
+    if (status !== 'COMPLETED') {
+      return res.status(400).json({ success: false, message: 'Hủy lịch và đánh dấu vắng phải dùng API Admin chuyên biệt.' });
     }
     await connection.beginTransaction();
-    // Keep the global payment/cancellation lock order: invoice first, appointment second.
-    if (status === 'CANCELLED') await connection.query('SELECT id FROM invoices WHERE appointment_id = ? FOR UPDATE', [id]);
+    // Match payment/cancellation lock order: invoice first, appointment second.
+    await connection.query('SELECT id FROM invoices WHERE appointment_id = ? FOR UPDATE', [id]);
     const [rows] = await connection.query(
       `SELECT a.appointment_id, a.patient_id, a.status, d.user_id AS doctor_user_id
        FROM appointments a JOIN doctors d ON d.id = a.doctor_id WHERE a.appointment_id = ? FOR UPDATE`, [id]
@@ -199,46 +213,12 @@ const updateAppointmentStatus = async (req, res, next) => {
     const app = rows[0];
     if (!app) { await connection.rollback(); return res.status(404).json({ success: false, message: 'Không tìm thấy lịch hẹn.' }); }
     let allowed = false;
-    if (role === 'PATIENT') allowed = status === 'CANCELLED' && app.patient_id === userId && app.status === 'PENDING';
-    if (role === 'ADMIN') allowed = status === 'CONFIRMED' || status === 'CANCELLED';
-    if (role === 'DOCTOR' && app.doctor_user_id === userId) {
-      allowed = status === 'CANCELLED' && app.status === 'PENDING';
-    }
+    if (role === 'ADMIN') allowed = status === 'COMPLETED' && app.status === 'CONFIRMED';
+    if (role === 'DOCTOR' && app.doctor_user_id === userId) allowed = status === 'COMPLETED' && app.status === 'CONFIRMED';
     if (!allowed) { await connection.rollback(); return res.status(403).json({ success: false, message: 'Bạn không có quyền hoặc lịch hẹn không ở trạng thái phù hợp.' }); }
     await connection.query('UPDATE appointments SET status = ? WHERE appointment_id = ?', [status, id]);
-    if (status === 'CANCELLED') {
-      const [invoices] = await connection.query('SELECT id, patient_id FROM invoices WHERE appointment_id = ?', [id]);
-      if (invoices[0]) {
-        await connection.query("UPDATE payments SET reconciliation_status = 'REVIEW' WHERE invoice_id = ? AND payment_status = 'PAID'", [invoices[0].id]);
-        const [[paidRow]] = await connection.query("SELECT COALESCE(SUM(amount), 0) AS paid FROM payments WHERE invoice_id = ? AND payment_status = 'PAID'", [invoices[0].id]);
-        const hasPayments = Number(paidRow.paid) > 0;
-        await connection.query(
-          `UPDATE notifications SET status = ?, message = ?
-           WHERE invoice_id = ? AND type = 'INVOICE_UPDATED' AND status <> 'SUPERSEDED'`,
-          [hasPayments ? 'REVIEW' : 'SUPERSEDED', hasPayments
-            ? `Lịch liên quan hóa đơn #${invoices[0].id} đã hủy. Đã nhận ${Number(paidRow.paid).toLocaleString('vi-VN')}đ; khoản tiền cần đối soát/hoàn tiền thủ công.`
-            : `Lịch liên quan hóa đơn #${invoices[0].id} đã hủy. Không ghi nhận thanh toán.`, invoices[0].id]
-        );
-      }
-      const [slotRows] = await connection.query('SELECT slot_id FROM appointments WHERE appointment_id = ?', [id]);
-      if (slotRows[0]?.slot_id) {
-        await connection.query("UPDATE shift_time_slots SET status = 'AVAILABLE' WHERE id = ?", [slotRows[0].slot_id]);
-        await connection.query('UPDATE appointments SET slot_id = NULL WHERE appointment_id = ?', [id]);
-      } else {
-        await connection.query("UPDATE shift_employee SET status = 'AVAILABLE' WHERE id = (SELECT shift_employee_id FROM appointments WHERE appointment_id = ?)", [id]);
-      }
-    }
     await connection.commit();
-    if (status === 'CANCELLED') {
-      const io = req.app.get('io');
-      io?.to(`user:${app.patient_id}`).emit('notifications_updated', { appointmentId: Number(id) });
-      io?.to(`user:${app.patient_id}`).emit('payment_updated', { appointmentId: Number(id), status: 'CANCELLED' });
-      io?.to('role:ADMIN').emit('payment_updated', { appointmentId: Number(id), status: 'CANCELLED' });
-    }
-    const message = status === 'CANCELLED'
-      ? 'Đã hủy lịch. Giao dịch đã thu vẫn được giữ nguyên và cần đối soát/hoàn tiền thủ công; hệ thống không tự hoàn tiền.'
-      : 'Đã cập nhật trạng thái lịch hẹn.';
-    return res.json({ success: true, message });
+    return res.json({ success: true, message: 'Đã cập nhật trạng thái khám.' });
   } catch (error) { await connection.rollback(); next(error); }
   finally { connection.release(); }
 };

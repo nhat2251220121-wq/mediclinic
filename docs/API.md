@@ -2,6 +2,10 @@
 
 API endpoints use the `/api` prefix. Authenticated endpoints require `Authorization: Bearer <token>`.
 
+## Symptom assistant
+
+`POST /api/ai/classify-symptom` is public and limited to 10 requests per minute per IP. Its body accepts only `{ "symptoms": "..." }` (1–2,000 characters); do not send age, gender, or identifying information. Emergency signs are checked before a provider call. The endpoint does not write symptom descriptions to the database or logs and does not persist assistant history. When configured, the backend calls the OpenAI Responses API with `OPENAI_MODEL` (default `gpt-5.4-mini`) and Structured Outputs JSON Schema. `OPENAI_API_KEY` is backend-only. Provider errors, invalid JSON/schema, or a specialty that does not match an active database specialty use the SRS/HLD rule fallback. The response contains exactly `predicted_specialty`, `specialty_id`, `recommendation_source`, `urgency_level`, `urgency_text`, `initial_advice`, `follow_up_questions`, `booking_allowed`, and `disclaimer`; it does not return diagnoses, prescriptions, or `possible_conditions`. If no specialty matches, `specialty_id` is `null` and the patient may continue to choose a service manually. For `EMERGENCY`, `booking_allowed` is `false`.
+
 ## Images
 
 Images are stored as files under `Backend/uploads/{services,doctors}`. The database contains only relative paths such as `/uploads/services/<server-generated-id>.webp`. Uploads accept one JPEG, PNG, or WebP file in multipart field `image`, with a 5 MiB maximum. The server validates the file signature and MIME type; it does not trust the client filename or extension. Unsupported/mismatched content returns `415`, excessive size returns `413`.
