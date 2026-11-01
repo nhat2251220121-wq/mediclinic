@@ -9,6 +9,7 @@ import PatientLayout from './components/layout/PatientLayout';
 import HomePage from './pages/HomePage';
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
+import ForgotPassword from './pages/auth/ForgotPassword';
 import Unauthorized from './pages/Unauthorized';
 import NotFound from './pages/NotFound';
 import ClinicIntro from './pages/ClinicIntro';
@@ -49,6 +50,8 @@ function App() {
           <Route path="/specialties" element={<Navigate to="/about#specialties" replace />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/ai-symptom" element={<AIChatSymptom />} />
           <Route path="/unauthorized" element={<Unauthorized />} />
 
           {/* ======================================================== */}
@@ -60,7 +63,7 @@ function App() {
               <Route path="booking" element={<Booking />} />
               <Route path="history" element={<MedicalHistory />} />
               <Route path="profile" element={<PatientProfile />} />
-              <Route path="ai-chat" element={<Navigate to="/patient/booking" replace />} />
+              <Route path="ai-chat" element={<AIChatSymptom />} />
             </Route>
           </Route>
 

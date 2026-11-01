@@ -37,6 +37,7 @@ const formatVietnamDateTime = (value) => {
 
 const getAmountDue = (invoice) => Number(invoice.amount_due ?? (invoice.payment_status === 'PAID' ? 0 : invoice.total_amount));
 const getPaymentState = (invoice) => {
+  if (invoice.invoice_status === 'VOID') return { label: 'Hết hiệu lực', className: 'border-slate-300 bg-slate-100 text-slate-700' };
   const paid = Number(invoice.amount_paid || 0);
   const due = getAmountDue(invoice);
   if (invoice.payment_status === 'PAID' || (Number(invoice.total_amount) > 0 && due <= 0)) {
@@ -49,7 +50,7 @@ const getPaymentState = (invoice) => {
 const getPaymentMethod = (method) => {
   if (method === 'CASH') return 'Tiền mặt';
   if (method === 'BANK_TRANSFER') return 'QR / chuyển khoản';
-  return method || 'Chưa chọn';
+  return 'Chưa chọn phương thức thanh toán';
 };
 
 const InvoiceMgmt = () => {
@@ -205,11 +206,12 @@ const InvoiceMgmt = () => {
                   </td>
                   <td className="px-4 py-4">
                     <div className="flex flex-wrap items-center gap-2">
-                      {inv.appointment_status !== 'CANCELLED' && due > 0 && <>
-                        <button disabled={cashProcessing === inv.id} onClick={() => confirmCash(inv)} className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 transition-colors hover:bg-emerald-100 disabled:opacity-50"><Banknote className="h-3.5 w-3.5" />{cashProcessing === inv.id ? 'Đang ghi nhận…' : 'Xác nhận tiền mặt'}</button>
-                        <button onClick={() => handleOpenPaymentModal(inv)} className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-800 transition-colors hover:bg-teal-100"><QrCode className="h-3.5 w-3.5" />QR</button>
-                      </>}
-                      {inv.appointment_status === 'CANCELLED' && <span className="text-xs leading-5 text-amber-800">Lịch đã hủy · cần đối soát khoản thu</span>}
+                      {inv.invoice_status === 'VOID' && <span className="text-xs leading-5 text-slate-700">Hóa đơn hết hiệu lực · khoản thu gốc được giữ để đối soát</span>}
+                      {inv.invoice_status !== 'VOID' && !['CANCELLED', 'NO_SHOW'].includes(inv.appointment_status) && due > 0 && inv.payment_method === 'CASH' && <button disabled={cashProcessing === inv.id} onClick={() => confirmCash(inv)} className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 transition-colors hover:bg-emerald-100 disabled:opacity-50"><Banknote className="h-3.5 w-3.5" />{cashProcessing === inv.id ? 'Đang ghi nhận…' : 'Xác nhận tiền mặt'}</button>}
+                      {inv.invoice_status !== 'VOID' && !['CANCELLED', 'NO_SHOW'].includes(inv.appointment_status) && due > 0 && inv.payment_method === 'BANK_TRANSFER' && <button onClick={() => handleOpenPaymentModal(inv)} className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-800 transition-colors hover:bg-teal-100"><QrCode className="h-3.5 w-3.5" />Xem QR · chờ webhook</button>}
+                      {inv.invoice_status !== 'VOID' && !['CANCELLED', 'NO_SHOW'].includes(inv.appointment_status) && due > 0 && !['CASH', 'BANK_TRANSFER'].includes(inv.payment_method) && <span className="text-xs text-slate-600">Chưa chọn phương thức thanh toán</span>}
+                      {due <= 0 && inv.invoice_status !== 'VOID' && <span className="text-xs font-semibold text-emerald-800">Đã thanh toán</span>}
+                      {inv.appointment_status === 'NO_SHOW' && <span className="text-xs leading-5 text-amber-800">Bệnh nhân được ghi nhận vắng mặt</span>}
                       {(inv.payments?.length || 0) > 0 && <button onClick={() => setReceiptInvoice(inv)} className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"><Printer className="h-3.5 w-3.5" />Biên nhận</button>}
                     </div>
                   </td>
@@ -228,6 +230,7 @@ const InvoiceMgmt = () => {
           appointmentId={selectedInvoice.appointment_id}
           patientName={selectedInvoice.patient_name}
           amount={selectedInvoice.total_amount}
+          lockedPaymentMethod="BANK_TRANSFER"
           onSuccess={() => fetchInvoices()}
         />
       )}

@@ -10,7 +10,7 @@ const getInvoices = async (req, res, next) => {
         let query = `
             SELECT 
                 i.id, i.appointment_id, i.service_fee, i.medicine_fee, i.total_amount,
-                i.payment_status, i.payment_method, i.cash_requested_at, i.paid_at, i.created_at, a.status AS appointment_status,
+                i.payment_status, i.invoice_status, i.payment_method, i.cash_requested_at, i.paid_at, i.created_at, a.status AS appointment_status,
                 COALESCE(SUM(CASE WHEN pay.payment_status = 'PAID' THEN pay.amount ELSE 0 END), 0) AS amount_paid,
                 GREATEST(i.total_amount - COALESCE(SUM(CASE WHEN pay.payment_status = 'PAID' THEN pay.amount ELSE 0 END), 0), 0) AS amount_due,
                 GROUP_CONCAT(DISTINCT pay.reconciliation_status) AS reconciliation_statuses,
@@ -80,11 +80,12 @@ const updatePaymentStatus = async (req, res, next) => {
             return res.status(400).json({ success: false, message: 'Chỉ có thể xác nhận khoản tiền mặt đã thu tại quầy.' });
         }
         await connection.beginTransaction();
-        const [rows] = await connection.query('SELECT id, patient_id, appointment_id, total_amount FROM invoices WHERE id = ? FOR UPDATE', [id]);
+        const [rows] = await connection.query('SELECT id, patient_id, appointment_id, total_amount, invoice_status, payment_method FROM invoices WHERE id = ? FOR UPDATE', [id]);
         const invoice = rows[0];
         if (!invoice) { await connection.rollback(); return res.status(404).json({ success: false, message: 'Không tìm thấy hóa đơn.' }); }
+        if (invoice.payment_method !== 'CASH') { await connection.rollback(); return res.status(409).json({ success: false, message: 'Hóa đơn không được chọn tiền mặt. Chỉ webhook SePay hợp lệ mới xác nhận khoản QR/chuyển khoản.' }); }
         const [appointments] = await connection.query('SELECT status FROM appointments WHERE appointment_id = ? FOR UPDATE', [invoice.appointment_id]);
-        if (!appointments.length || appointments[0].status === 'CANCELLED') { await connection.rollback(); return res.status(409).json({ success: false, message: 'Không thể ghi nhận tiền mặt cho lịch đã hủy.' }); }
+        if (!appointments.length || ['CANCELLED', 'NO_SHOW'].includes(appointments[0].status) || invoice.invoice_status !== 'ACTIVE') { await connection.rollback(); return res.status(409).json({ success: false, message: 'Không thể ghi nhận thanh toán cho lịch đã hủy hoặc hóa đơn hết hiệu lực.' }); }
         const [[sumRow]] = await connection.query("SELECT COALESCE(SUM(amount),0) AS paid FROM payments WHERE invoice_id = ? AND payment_status = 'PAID'", [id]);
         const due = Math.max(0, Math.round((Number(invoice.total_amount) - Number(sumRow.paid)) * 100) / 100);
         if (due <= 0) { await connection.rollback(); return res.status(409).json({ success: false, message: 'Hóa đơn đã thanh toán đủ.' }); }
@@ -98,10 +99,11 @@ const updatePaymentStatus = async (req, res, next) => {
              VALUES (?, 'INTERNAL', ?, 'CASH', ?, ?, 'PAID', ?)`, [id, transactionCode, transactionCode, due, req.user.id]
         );
         await connection.query("UPDATE invoices SET payment_status = 'PAID', payment_method = 'CASH', cash_requested_at = NULL, paid_at = NOW() WHERE id = ?", [id]);
+        await connection.query("UPDATE appointments SET status = 'CONFIRMED' WHERE appointment_id = ? AND status = 'PENDING'", [invoice.appointment_id]);
         const [[totalPaidRow]] = await connection.query("SELECT COALESCE(SUM(amount), 0) AS paid FROM payments WHERE invoice_id = ? AND payment_status = 'PAID'", [id]);
         const notice = await syncInvoiceNotification(connection, { invoiceId: Number(id), totalAmount: invoice.total_amount, paidAmount: Number(totalPaidRow.paid) });
         await connection.commit();
-        const event = { appointmentId: invoice.appointment_id, status: 'PAID', amount: due };
+        const event = { appointmentId: invoice.appointment_id, status: 'PAID', appointmentStatus: 'CONFIRMED', amount: due };
         req.app.get('io')?.to(`user:${invoice.patient_id}`).emit('payment_updated', event);
         req.app.get('io')?.to('role:ADMIN').emit('payment_updated', event);
         if (notice.changed) emitNotificationsUpdated(req, invoice.patient_id, Number(id));
@@ -115,14 +117,12 @@ const requestCashPayment = async (req, res, next) => {
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
-        const [rows] = await connection.query(
-            `SELECT i.id, i.patient_id, i.appointment_id, i.total_amount, a.status AS appointment_status
-             FROM invoices i JOIN appointments a ON a.appointment_id = i.appointment_id WHERE i.id = ? FOR UPDATE`, [req.params.id]
-        );
+        const [rows] = await connection.query('SELECT id, patient_id, appointment_id, total_amount, invoice_status FROM invoices WHERE id = ? FOR UPDATE', [req.params.id]);
         const invoice = rows[0];
         if (!invoice) { await connection.rollback(); return res.status(404).json({ success: false, message: 'Không tìm thấy hóa đơn.' }); }
         if (invoice.patient_id !== req.user.id) { await connection.rollback(); return res.status(403).json({ success: false, message: 'Bạn không có quyền yêu cầu thanh toán hóa đơn này.' }); }
-        if (invoice.appointment_status === 'CANCELLED') { await connection.rollback(); return res.status(409).json({ success: false, message: 'Lịch đã hủy; vui lòng liên hệ phòng khám để đối soát.' }); }
+        const [appointments] = await connection.query('SELECT status FROM appointments WHERE appointment_id = ? FOR UPDATE', [invoice.appointment_id]);
+        if (!appointments.length || appointments[0].status === 'CANCELLED' || appointments[0].status === 'NO_SHOW' || invoice.invoice_status !== 'ACTIVE') { await connection.rollback(); return res.status(409).json({ success: false, message: 'Hóa đơn đã hết hiệu lực do lịch hẹn đã kết thúc hoặc bị hủy.' }); }
         const [[paidRow]] = await connection.query("SELECT COALESCE(SUM(amount),0) AS paid FROM payments WHERE invoice_id = ? AND payment_status = 'PAID'", [invoice.id]);
         const due = Math.max(0, Math.round((Number(invoice.total_amount) - Number(paidRow.paid)) * 100) / 100);
         if (due <= 0) { await connection.rollback(); return res.status(409).json({ success: false, message: 'Hóa đơn đã thanh toán đủ.' }); }

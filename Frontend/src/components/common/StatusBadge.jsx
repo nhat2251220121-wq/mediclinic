@@ -15,6 +15,8 @@ const StatusBadge = ({ status, type = 'appointment' }) => {
           return { label: 'Đã khám xong', bg: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
         case 'CANCELLED':
           return { label: 'Đã hủy', bg: 'bg-rose-100 text-rose-800 border-rose-200' };
+        case 'NO_SHOW':
+          return { label: 'Vắng mặt', bg: 'bg-slate-100 text-slate-700 border-slate-300' };
         default:
           return { label: status, bg: 'bg-slate-100 text-slate-700 border-slate-200' };
       }
@@ -33,8 +35,10 @@ const StatusBadge = ({ status, type = 'appointment' }) => {
 
     if (type === 'urgency') {
       switch (status) {
+        case 'ROUTINE':
         case 'LOW':
           return { label: 'Bình thường', bg: 'bg-slate-100 text-slate-700 border-slate-200' };
+        case 'URGENT':
         case 'MEDIUM':
           return { label: 'Cần chú ý', bg: 'bg-amber-100 text-amber-800 border-amber-200' };
         case 'HIGH':

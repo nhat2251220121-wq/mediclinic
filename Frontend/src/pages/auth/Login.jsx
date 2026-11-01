@@ -15,6 +15,7 @@ const Login = () => {
   const location = useLocation();
 
   const from = location.state?.from || null;
+  const passwordResetSuccess = location.state?.passwordResetSuccess === true;
 
   const getRoleHome = (role) => ({
     ADMIN: '/admin/dashboard',
@@ -84,6 +85,7 @@ const Login = () => {
             <span>{error}</span>
           </div>
         )}
+        {passwordResetSuccess && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-800">Đổi mật khẩu thành công. Hãy đăng nhập bằng mật khẩu mới.</div>}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -106,6 +108,7 @@ const Login = () => {
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-semibold text-slate-600">* Mật khẩu</label>
+              <Link to="/forgot-password" className="text-xs font-semibold text-sky-700 hover:underline">Quên mật khẩu?</Link>
             </div>
             <div className="relative">
               <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />

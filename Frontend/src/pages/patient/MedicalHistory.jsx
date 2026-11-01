@@ -7,13 +7,41 @@ import { socket } from '../../api/socket';
 import { useLocation } from 'react-router-dom';
 import { Eye, Calendar, Clock, Stethoscope, Pill, X, Heart, Activity, FileText, Download, ChevronLeft, ChevronRight, QrCode, RefreshCw, Check } from 'lucide-react';
 
+const minutesUntilAppointment = (appointmentDate, timeSlot) => {
+  const date = String(appointmentDate || '').slice(0, 10);
+  const match = String(timeSlot || '').match(/(\d{1,2}):(\d{2})/);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !match) return null;
+  const [year, month, day] = date.split('-').map(Number);
+  const startsAtUtc = Date.UTC(year, month - 1, day, Number(match[1]) - 7, Number(match[2]));
+  return (startsAtUtc - Date.now()) / 60000;
+};
+
+const cancellationStatusText = (request) => {
+  if (!request) return '';
+  if (request.status === 'PENDING') return 'Đang chờ Admin duyệt';
+  if (request.status === 'REJECTED') return 'Bị từ chối';
+  if (request.refund_status === 'PENDING') return 'Đã duyệt · Chờ hoàn tiền';
+  if (request.refund_status === 'PARTIAL') return 'Đã hoàn một phần';
+  if (request.refund_status === 'COMPLETED') return 'Đã hoàn tiền';
+  return 'Đã duyệt';
+};
+
 const MedicalHistory = () => {
   const location = useLocation();
   const { user } = useAuth();
   const [appointments, setAppointments] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [medicalRecords, setMedicalRecords] = useState([]);
+  const [cancellationRequests, setCancellationRequests] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [cancellationModalItem, setCancellationModalItem] = useState(null);
+  const [bankDetailsRequestId, setBankDetailsRequestId] = useState(null);
+  const [cancellationReason, setCancellationReason] = useState('');
+  const [refundAccountName, setRefundAccountName] = useState('');
+  const [refundBankName, setRefundBankName] = useState('');
+  const [refundAccountNumber, setRefundAccountNumber] = useState('');
+  const [cancellationError, setCancellationError] = useState('');
+  const [cancellationSaving, setCancellationSaving] = useState(false);
 
   // State cho Modal xem chi tiết
   const [selectedRecord, setSelectedRecord] = useState(null);
@@ -33,25 +61,33 @@ const MedicalHistory = () => {
       console.log('⚡ Socket event payment_updated in MedicalHistory:', data);
       fetchData();
     };
+    const handleCancellationUpdated = () => {
+      setIsPaymentModalOpen(false);
+      fetchData();
+    };
 
     socket.on('payment_updated', handlePaymentCompleted);
+    socket.on('appointment_cancellation_updated', handleCancellationUpdated);
     return () => {
       socket.off('payment_updated', handlePaymentCompleted);
+      socket.off('appointment_cancellation_updated', handleCancellationUpdated);
     };
   }, []);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [appRes, invRes, recordRes] = await Promise.all([
+      const [appRes, invRes, recordRes, cancellationRes] = await Promise.all([
         axiosClient.get('/appointments'),
         axiosClient.get('/invoices'),
-        axiosClient.get('/medical-records')
+        axiosClient.get('/medical-records'),
+        axiosClient.get('/appointments/cancellation-requests/mine')
       ]);
 
       if (appRes.success) setAppointments(appRes.data);
       if (invRes.success) setInvoices(invRes.data);
       if (recordRes.success) setMedicalRecords(recordRes.data || []);
+      if (cancellationRes.success) setCancellationRequests(cancellationRes.data || []);
     } catch (err) {
       console.error('Lỗi tải dữ liệu lịch sử khám:', err);
     } finally {
@@ -68,10 +104,13 @@ const MedicalHistory = () => {
   // Ghép nối thông tin lịch hẹn và hóa đơn tương ứng
   const combinedHistory = appointments.map((app) => {
     const matchedInv = invoices.find(inv => inv.appointment_id === app.id || inv.appointment_id === app.appointment_id);
+    const appointmentId = Number(app.appointment_id || app.id);
+    const cancellation = cancellationRequests.find((request) => Number(request.appointment_id) === appointmentId) || null;
     return {
       ...app,
       invoice: matchedInv || null,
       medicalRecord: medicalRecords.find((record) => Number(record.appointment_id) === Number(app.appointment_id || app.id)) || null,
+      cancellation,
       isPaid: Boolean(matchedInv && Number(matchedInv.amount_due) <= 0 && matchedInv.payment_status === 'PAID')
     };
   });
@@ -97,6 +136,67 @@ const MedicalHistory = () => {
   const handleOpenPaymentModal = (item) => {
     setSelectedPaymentApp(item);
     setIsPaymentModalOpen(true);
+  };
+
+  const openCancellation = (item) => {
+    const minutes = minutesUntilAppointment(item.appointment_date, item.time_slot);
+    const hasPaidAmount = Number(item.invoice?.amount_paid || 0) > 0;
+    const requiresReview = hasPaidAmount || minutes == null || minutes < 120;
+    if (!requiresReview) {
+      if (!window.confirm(`Hủy lịch khám #${item.id}? Lịch chưa thanh toán và còn ít nhất 2 giờ nên sẽ được hủy ngay.`)) return;
+      axiosClient.post(`/appointments/${item.id}/cancellation-requests`, {})
+        .then(() => fetchData())
+        .catch((error) => window.alert(error.message || 'Không thể hủy lịch.'));
+      return;
+    }
+    setCancellationModalItem(item);
+    setCancellationReason('');
+    setRefundAccountName('');
+    setRefundBankName('');
+    setRefundAccountNumber('');
+    setCancellationError('');
+  };
+
+  const submitCancellationRequest = async () => {
+    if (!cancellationModalItem) return;
+    const item = cancellationModalItem;
+    const minutes = minutesUntilAppointment(item.appointment_date, item.time_slot);
+    const bankRefundRequired = (item.invoice?.payments || []).some((payment) => payment.payment_status === 'PAID' && payment.payment_method === 'BANK_TRANSFER');
+    if (minutes != null && minutes < 120 && cancellationReason.trim().length < 3) {
+      setCancellationError('Trong vòng 2 giờ trước giờ khám, vui lòng nhập lý do hủy.');
+      return;
+    }
+    if (bankRefundRequired && (!refundAccountName.trim() || !refundBankName.trim() || !/^\d{6,24}$/.test(refundAccountNumber.replace(/\s+/g, '')))) {
+      setCancellationError('Nhập tên chủ tài khoản, ngân hàng và số tài khoản nhận hoàn tiền hợp lệ.');
+      return;
+    }
+    setCancellationSaving(true);
+    setCancellationError('');
+    try {
+      await axiosClient.post(`/appointments/${item.id}/cancellation-requests`, {
+        reason: cancellationReason,
+        ...(bankRefundRequired ? { bankDetails: { accountName: refundAccountName, bankName: refundBankName, accountNumber: refundAccountNumber } } : {})
+      });
+      setCancellationModalItem(null);
+      await fetchData();
+    } catch (error) {
+      setCancellationError(error.message || 'Không gửi được yêu cầu hủy lịch.');
+    } finally { setCancellationSaving(false); }
+  };
+
+  const saveRefundBankDetails = async () => {
+    if (!/^\d{6,24}$/.test(refundAccountNumber.replace(/\s+/g, '')) || !refundAccountName.trim() || !refundBankName.trim()) {
+      setCancellationError('Nhập tên chủ tài khoản, ngân hàng và số tài khoản hợp lệ.');
+      return;
+    }
+    setCancellationSaving(true);
+    setCancellationError('');
+    try {
+      await axiosClient.put(`/appointments/cancellation-requests/${bankDetailsRequestId}/bank-details`, { accountName: refundAccountName, bankName: refundBankName, accountNumber: refundAccountNumber });
+      setBankDetailsRequestId(null);
+      await fetchData();
+    } catch (error) { setCancellationError(error.message || 'Không lưu được thông tin nhận hoàn.'); }
+    finally { setCancellationSaving(false); }
   };
 
   return (
@@ -158,15 +258,27 @@ const MedicalHistory = () => {
                     <td className="py-4 px-6">
                       {item.invoice ? <div className="space-y-1.5">
                         <div className="text-[11px] text-slate-700">Tổng {Number(item.invoice.total_amount).toLocaleString('vi-VN')}đ · Đã trả {Number(item.invoice.amount_paid).toLocaleString('vi-VN')}đ</div>
-                        <div className={`text-[11px] font-semibold ${Number(item.invoice.amount_due) > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>Còn thiếu {Number(item.invoice.amount_due).toLocaleString('vi-VN')}đ</div>
-                        {Number(item.invoice.amount_due) > 0 && item.status !== 'CANCELLED' && <button onClick={() => handleOpenPaymentModal(item)} className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-3 py-1 text-xs font-bold text-white"><QrCode className="h-3.5 w-3.5" />Trả phần còn thiếu</button>}
+                        <div className={`text-[11px] font-semibold ${Number(item.invoice.amount_due) > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>{item.invoice.invoice_status === 'VOID' ? `Còn thiếu tại thời điểm hủy ${Number(item.invoice.amount_due).toLocaleString('vi-VN')}đ` : `Còn thiếu ${Number(item.invoice.amount_due).toLocaleString('vi-VN')}đ`}</div>
+                        {item.invoice.invoice_status === 'VOID' && <span className="block text-[11px] font-semibold text-slate-600">Hóa đơn đã hết hiệu lực</span>}
+                        {Number(item.invoice.amount_due) > 0 && item.status !== 'CANCELLED' && item.status !== 'NO_SHOW' && item.invoice.invoice_status !== 'VOID' && <button onClick={() => handleOpenPaymentModal(item)} className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-3 py-1 text-xs font-bold text-white"><QrCode className="h-3.5 w-3.5" />Trả phần còn thiếu</button>}
                         {item.invoice.cash_requested_at && Number(item.invoice.amount_due) > 0 && <span className="block text-[11px] font-semibold text-amber-700">Tiền mặt tại quầy · đang chờ xác nhận thu</span>}
-                        {item.status === 'CANCELLED' && <span className="text-[11px] font-semibold text-amber-700">Lịch đã hủy · liên hệ phòng khám để đối soát</span>}
+                        {item.status === 'CANCELLED' && <span className="text-[11px] font-semibold text-amber-700">Lịch đã hủy · khoản thu gốc vẫn được lưu</span>}
+                        {item.cancellation && <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-700">
+                          <strong>{cancellationStatusText(item.cancellation)}</strong>
+                          {(item.cancellation.patient_reason || item.cancellation.clinic_reason) && <p className="mt-1">Lý do: {item.cancellation.patient_reason || item.cancellation.clinic_reason}</p>}
+                          {item.cancellation.status === 'REJECTED' && item.cancellation.decision_note && <p className="mt-1 text-rose-700">Lý do từ chối: {item.cancellation.decision_note}</p>}
+                          {item.cancellation.bank_account_masked && <p className="mt-1">Tài khoản nhận hoàn: {item.cancellation.bank_account_masked}</p>}
+                          {item.cancellation.status === 'APPROVED' && !item.cancellation.has_bank_details && item.cancellation.refunds?.some((refund) => refund.refund_method === 'BANK_TRANSFER' && refund.status === 'PENDING') && <button type="button" onClick={() => { setBankDetailsRequestId(item.cancellation.id); setRefundAccountName(''); setRefundBankName(''); setRefundAccountNumber(''); setCancellationError(''); }} className="mt-2 rounded-lg border border-teal-300 bg-white px-2.5 py-1.5 font-semibold text-teal-800">Cung cấp tài khoản nhận hoàn</button>}
+                          {item.cancellation.refunds?.map((refund) => <p key={refund.id} className="mt-1">{refund.refund_method === 'CASH_COUNTER' ? 'Trả tại quầy' : 'Chuyển khoản'} · {Number(refund.amount).toLocaleString('vi-VN')} ₫ · {refund.status === 'COMPLETED' ? 'Đã hoàn' : 'Chờ hoàn'}{refund.reference_code ? ` · Mã ${refund.reference_code}` : ''}</p>)}
+                        </div>}
                         <details className="text-[11px]"><summary className="cursor-pointer text-sky-700">Giao dịch ({item.invoice.payments?.length || 0})</summary><div className="mt-1 space-y-1">{item.invoice.payments?.map((payment) => <p key={payment.payment_id} className="text-slate-600">{payment.payment_method === 'CASH' ? 'Tiền mặt' : 'Chuyển khoản'} · {Number(payment.amount).toLocaleString('vi-VN')}đ · {payment.transaction_code || payment.provider} · {new Date(payment.created_at).toLocaleString('vi-VN')}</p>)}</div></details>
                       </div> : <span className="text-xs text-slate-500">Hóa đơn đang được cập nhật.</span>}
                     </td>
                     <td className="py-4 px-6 text-center">
                       <div className="flex items-center justify-center gap-2">
+                        {['PENDING', 'CONFIRMED'].includes(item.status) && item.cancellation?.status !== 'PENDING' && (
+                          <button onClick={() => openCancellation(item)} title="Yêu cầu hủy lịch" className="rounded-xl bg-rose-50 p-2 text-rose-700 hover:bg-rose-100"><X className="h-4 w-4" /></button>
+                        )}
                         <button
                           onClick={() => setSelectedRecord(item)}
                           title="Xem chi tiết buổi khám"
@@ -183,6 +295,45 @@ const MedicalHistory = () => {
           </table>
         </div>
       </div>
+
+      {cancellationModalItem && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto p-3 sm:p-6">
+          <button type="button" aria-label="Đóng" className="fixed inset-0 bg-slate-950/50" onClick={() => setCancellationModalItem(null)} />
+          <section className="relative z-10 max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl sm:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div><h3 className="text-lg font-bold text-slate-900">Yêu cầu hủy lịch #{cancellationModalItem.id}</h3><p className="mt-1 text-sm text-slate-600">Lịch vẫn được giữ đến khi Admin duyệt. Duyệt yêu cầu chưa có nghĩa là tiền đã hoàn.</p></div>
+              <button type="button" onClick={() => setCancellationModalItem(null)} aria-label="Đóng" className="rounded-lg p-1 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button>
+            </div>
+            {Number(cancellationModalItem.invoice?.amount_paid || 0) > 0 && <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">Đã thu {Number(cancellationModalItem.invoice.amount_paid).toLocaleString('vi-VN')} ₫. Nếu được duyệt, việc hoàn tiền sẽ do phòng khám thực hiện thủ công.</p>}
+            <label className="mt-4 block text-sm font-semibold text-slate-700">Lý do {minutesUntilAppointment(cancellationModalItem.appointment_date, cancellationModalItem.time_slot) < 120 ? '(bắt buộc)' : '(không bắt buộc)'}</label>
+            <textarea value={cancellationReason} onChange={(event) => setCancellationReason(event.target.value)} maxLength={2000} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 p-3 text-sm focus:border-teal-600 focus:outline-none" placeholder="Nhập lý do hủy lịch" />
+            {(cancellationModalItem.invoice?.payments || []).some((payment) => payment.payment_status === 'PAID' && payment.payment_method === 'BANK_TRANSFER') && <div className="mt-4 space-y-3 rounded-xl border border-slate-200 p-3">
+              <h4 className="text-sm font-semibold text-slate-800">Thông tin nhận hoàn chuyển khoản</h4>
+              <p className="text-xs text-slate-500">Chỉ Admin được xem đầy đủ; lịch sử của bạn chỉ hiện bốn số cuối tài khoản.</p>
+              <input value={refundAccountName} onChange={(event) => setRefundAccountName(event.target.value)} maxLength={120} className="w-full rounded-lg border border-slate-300 p-2.5 text-sm" placeholder="Tên chủ tài khoản" />
+              <input value={refundBankName} onChange={(event) => setRefundBankName(event.target.value)} maxLength={120} className="w-full rounded-lg border border-slate-300 p-2.5 text-sm" placeholder="Ngân hàng" />
+              <input value={refundAccountNumber} onChange={(event) => setRefundAccountNumber(event.target.value)} maxLength={30} inputMode="numeric" className="w-full rounded-lg border border-slate-300 p-2.5 text-sm" placeholder="Số tài khoản" />
+            </div>}
+            {(cancellationModalItem.invoice?.payments || []).some((payment) => payment.payment_status === 'PAID' && payment.payment_method === 'CASH') && <p className="mt-3 text-sm text-slate-600">Khoản tiền mặt (nếu được duyệt hoàn) sẽ được trả tại quầy.</p>}
+            {cancellationError && <p role="alert" className="mt-3 text-sm text-rose-700">{cancellationError}</p>}
+            <div className="mt-5 flex flex-col-reverse justify-end gap-2 sm:flex-row">
+              <button type="button" onClick={() => setCancellationModalItem(null)} className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700">Đóng</button>
+              <button type="button" disabled={cancellationSaving} onClick={submitCancellationRequest} className="rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{cancellationSaving ? 'Đang gửi…' : 'Gửi yêu cầu hủy'}</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {bankDetailsRequestId && <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto p-3 sm:p-6">
+        <button type="button" aria-label="Đóng" className="fixed inset-0 bg-slate-950/50" onClick={() => setBankDetailsRequestId(null)} />
+        <section className="relative z-10 w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+          <h3 className="text-lg font-bold text-slate-900">Thông tin nhận hoàn chuyển khoản</h3>
+          <p className="mt-1 text-sm text-slate-600">Chỉ Admin được xem đầy đủ thông tin tài khoản.</p>
+          <div className="mt-4 space-y-3"><input value={refundAccountName} onChange={(event) => setRefundAccountName(event.target.value)} maxLength={120} className="w-full rounded-lg border border-slate-300 p-2.5 text-sm" placeholder="Tên chủ tài khoản" /><input value={refundBankName} onChange={(event) => setRefundBankName(event.target.value)} maxLength={120} className="w-full rounded-lg border border-slate-300 p-2.5 text-sm" placeholder="Ngân hàng" /><input value={refundAccountNumber} onChange={(event) => setRefundAccountNumber(event.target.value)} maxLength={30} inputMode="numeric" className="w-full rounded-lg border border-slate-300 p-2.5 text-sm" placeholder="Số tài khoản" /></div>
+          {cancellationError && <p role="alert" className="mt-3 text-sm text-rose-700">{cancellationError}</p>}
+          <div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setBankDetailsRequestId(null)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">Đóng</button><button type="button" disabled={cancellationSaving} onClick={saveRefundBankDetails} className="rounded-lg bg-teal-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60">Lưu thông tin</button></div>
+        </section>
+      </div>}
 
       {/* Modal Chi Tiết Buổi Khám */}
       {selectedRecord && (
@@ -259,7 +410,7 @@ const MedicalHistory = () => {
               </div>
             </div>
 
-            {!selectedRecord.isPaid && selectedRecord.status !== 'CANCELLED' && Number(selectedRecord.invoice?.amount_due) > 0 && (
+            {!selectedRecord.isPaid && selectedRecord.status !== 'CANCELLED' && selectedRecord.status !== 'NO_SHOW' && selectedRecord.invoice?.invoice_status !== 'VOID' && Number(selectedRecord.invoice?.amount_due) > 0 && (
               <button
                 onClick={() => {
                   const rec = selectedRecord;
@@ -293,6 +444,7 @@ const MedicalHistory = () => {
           appointmentId={selectedPaymentApp.id}
           patientName={user?.full_name || 'Bệnh nhân'}
           amount={selectedPaymentApp.invoice?.total_amount}
+          initialPaymentMethod={selectedPaymentApp.invoice?.payment_method}
           onSuccess={() => fetchData()}
         />
       )}

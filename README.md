@@ -57,7 +57,7 @@ Migration `011_invoice_prescription_billing_and_cash_request.js` bổ sung trạ
 
 ## Cấu hình tích hợp
 
-Tham khảo `Backend/.env.example`. Các biến email OTP, Gemini và ngân hàng/SePay chỉ cần đặt khi bật các tích hợp tương ứng. Gemini dùng `GEMINI_MODEL` (mặc định `gemini-3.8-flash` theo danh mục model hiện hành; có thể đổi theo quyền truy cập tài khoản). Khi Gemini không cấu hình hoặc gọi lỗi, kết quả được đánh dấu là gợi ý theo quy tắc dự phòng. Hệ thống không chấp nhận cấu hình payment mẫu; khi thiếu cấu hình, API trả trạng thái chưa sẵn sàng. CORS và Socket.IO chỉ cho phép các origin khai báo ở `FRONTEND_URL`.
+Tham khảo `Backend/.env.example`. Các biến email OTP, OpenAI và ngân hàng/SePay chỉ cần đặt khi bật các tích hợp tương ứng. Phân loại triệu chứng dùng OpenAI Responses API với `OPENAI_MODEL=gpt-5.4-mini`; `OPENAI_API_KEY` chỉ nằm ở backend. Nếu OpenAI chưa cấu hình, gọi lỗi hoặc trả dữ liệu không hợp lệ, hệ thống chuyển sang quy tắc dự phòng trong SRS/HLD. Dấu hiệu cấp cứu đã biết được chặn trước khi gọi OpenAI. Endpoint phân loại không ghi mô tả triệu chứng vào database hoặc log và không lưu lịch sử trợ lý; khi tiếp tục đặt lịch, người dùng tự nhập lý do khám vào form đặt lịch. Hệ thống không chấp nhận cấu hình payment mẫu; khi thiếu cấu hình, API trả trạng thái chưa sẵn sàng. CORS và Socket.IO chỉ cho phép các origin khai báo ở `FRONTEND_URL`.
 
 Thông tin liên hệ hiển thị ở cuối trang khách hàng lấy từ các biến tùy chọn `VITE_CLINIC_ADDRESS`, `VITE_CLINIC_PHONE`, `VITE_CLINIC_EMAIL` trong `Frontend/.env`. Chỉ các mục có giá trị mới được hiển thị; đặt lại các biến này trong môi trường triển khai và khởi động lại frontend để cập nhật.
 
@@ -79,3 +79,23 @@ Endpoint upload ảnh, hồ sơ bác sĩ, thanh toán và quyền truy cập đ�
 Các bước xác minh gần nhất và phần chưa chạy được ghi trong bàn giao của lần sửa. Chỉ chạy migration và webhook trên bản sao/database thử nghiệm trước; không cấu hình hoặc thử thanh toán thật trên tài khoản ngân hàng.
 
 Một số quy trình vẫn cần hoàn thiện trước khi coi đây là hệ thống vận hành phòng khám: quan hệ dịch vụ–chuyên khoa để lọc bác sĩ theo dịch vụ, lịch làm việc phía admin, tái khám tạo lịch liên kết tự động, bộ lọc khoảng thời gian dashboard, luồng hoàn tiền và đối soát hoàn tiền, pagination cho các bảng lớn, xuất/in chứng từ trên nhiều trình duyệt và đồng bộ toàn bộ màn hình quản trị theo thiết kế thống nhất.
+## Hủy lịch và hoàn tiền thủ công
+
+Luồng hủy lịch dùng migration `Backend/database/migrations/013_appointment_cancellation_refunds.js`. Migration bổ sung trạng thái `NO_SHOW`, trạng thái hiệu lực hóa đơn, yêu cầu hủy và các dòng hoàn tiền; không xóa hoặc sửa giao dịch thu gốc. Chạy migration theo quy trình dự án sau khi sao lưu database và xác minh đúng tên database. Không chạy trực tiếp trên `mediclinic_db` khi chưa được duyệt.
+
+Quên mật khẩu dùng bảng OTP riêng `password_reset_otps` (migration `Backend/database/migrations/014_password_reset_otps.js`), không dùng OTP đăng ký. OTP đặt lại mật khẩu có 6 chữ số, hết hạn sau 5 phút, tối đa 5 lần nhập sai; gửi lại có cooldown 60 giây và giới hạn theo email/IP. API gửi mã trả lời chung để không tiết lộ email có tài khoản hay không. Các endpoint là `POST /api/auth/password-reset/send-otp` (`email`), `POST /api/auth/password-reset/verify-otp` (`email`, `otp`) và `POST /api/auth/password-reset/reset` (`resetToken`, `newPassword`, `confirmPassword`). Cần cấu hình email như luồng OTP đăng ký. Chỉ chạy `npm run test:password-reset-db` khi backend `.env` trỏ tới database test riêng `mediclinic_cancel_test_20261031_a1`; test dùng mailer giả và không gửi email thật.
+
+Thông tin tài khoản nhận hoàn được mã hóa AES-256-GCM ở backend. Trước khi bật luồng nhận tài khoản, cấu hình `REFUND_PII_ENCRYPTION_KEY` bằng một giá trị ngẫu nhiên riêng dài tối thiểu 32 ký tự (tham khảo `Backend/.env.example`). Giữ khóa ngoài Git và lưu an toàn; mất/đổi khóa sẽ không giải mã được thông tin đã lưu. API bệnh nhân chỉ trả bốn số cuối; API yêu cầu hoàn của Admin mới trả tài khoản đầy đủ.
+
+API chính (đều cần bearer token):
+
+- `POST /api/appointments/:id/cancellation-requests` — bệnh nhân tự hủy khi còn ít nhất 2 giờ và chưa thu tiền; các trường hợp còn lại tạo yêu cầu chờ Admin. Có thể gửi `reason` và `bankDetails` gồm `accountName`, `bankName`, `accountNumber`.
+- `GET /api/appointments/cancellation-requests/mine` — lịch sử yêu cầu/hoàn của bệnh nhân hiện tại; thông tin tài khoản chỉ được che.
+- `PUT /api/appointments/cancellation-requests/:requestId/bank-details` — bổ sung tài khoản nhận hoàn cho yêu cầu đã duyệt từ phía phòng khám.
+- `GET /api/appointments/admin/cancellation-requests?status=PENDING|APPROVED|REJECTED|REFUND_PENDING|ALL` — chỉ Admin; trả chi tiết tài khoản nhận hoàn.
+- `POST /api/appointments/admin/cancellation-requests/:requestId/approve` và `/reject` — chỉ Admin; từ chối bắt buộc có `reason`; duyệt dưới 2 giờ có thể gửi `refundAmount` không vượt số thực thu còn có thể hoàn.
+- `POST /api/appointments/admin/cancellation-requests/:requestId/refunds/:refundId/complete` — chỉ Admin; xác nhận sau khi đã chuyển khoản/trả tiền mặt thực tế, cần `referenceCode` cho chuyển khoản hoặc `note` cho tiền mặt.
+- `POST /api/appointments/admin/:id/cancel` — phòng khám chủ động hủy với `reason`; tự tạo các dòng hoàn toàn bộ tiền đã thu ở trạng thái chờ.
+- `POST /api/appointments/admin/:id/no-show` — chỉ Admin, body `{ "confirmedAbsent": true }`; chỉ hợp lệ sau ít nhất 15 phút và không còn yêu cầu hủy đang chờ.
+
+Yêu cầu đang chờ không đổi trạng thái lịch và không giải phóng khung. Lịch chỉ chuyển sang `CANCELLED` khi được duyệt; hóa đơn chuyển `VOID`, còn payment gốc giữ `PAID` để đối soát. Không có giao dịch hoàn tiền tự động.

@@ -30,6 +30,19 @@ CREATE TABLE `users` (
     INDEX `idx_users_role` (`role`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE `password_reset_otps` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `email` VARCHAR(150) NOT NULL,
+    `otp_hash` CHAR(64) NOT NULL,
+    `expires_at` DATETIME NOT NULL,
+    `verified_at` DATETIME NULL,
+    `consumed_at` DATETIME NULL,
+    `attempts` TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_password_reset_email_created` (`email`, `created_at`),
+    INDEX `idx_password_reset_expiry` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ----------------------------------------------------------------------------
 -- 2. BẢNG CHUYÊN KHOA (specialties) & PHÒNG KHÁM (rooms)
 -- ----------------------------------------------------------------------------
@@ -159,7 +172,7 @@ CREATE TABLE `appointments` (
     `slot_id` INT NULL,
     `appointment_date` DATE NOT NULL,
     `time_slot` VARCHAR(50) NOT NULL,
-    `status` ENUM('PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED') NOT NULL DEFAULT 'PENDING',
+    `status` ENUM('PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED', 'NO_SHOW') NOT NULL DEFAULT 'PENDING',
     `initial_symptoms` TEXT NULL,
     `ai_predicted_specialty` VARCHAR(100) NULL,
     `full_name` VARCHAR(150) NULL,
@@ -325,6 +338,7 @@ CREATE TABLE `invoices` (
     `medicine_fee` DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
     `total_amount` DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
     `payment_status` ENUM('UNPAID', 'PAID') NOT NULL DEFAULT 'UNPAID',
+    `invoice_status` ENUM('ACTIVE', 'VOID') NOT NULL DEFAULT 'ACTIVE',
     `payment_method` ENUM('CASH', 'BANK_TRANSFER') DEFAULT 'CASH',
     `cash_requested_at` DATETIME NULL,
     `paid_at` DATETIME NULL,
@@ -375,6 +389,53 @@ CREATE TABLE `invoice_items` (
     CONSTRAINT `chk_invoice_items_quantity` CHECK (`quantity` > 0),
     CONSTRAINT `chk_invoice_items_unit_price` CHECK (`unit_price` >= 0),
     CONSTRAINT `chk_invoice_items_line_total` CHECK (`line_total` >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `appointment_cancellation_requests` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `appointment_id` INT NOT NULL,
+    `invoice_id` INT NULL,
+    `patient_id` INT NOT NULL,
+    `request_source` ENUM('PATIENT', 'CLINIC') NOT NULL,
+    `patient_reason` TEXT NULL,
+    `clinic_reason` TEXT NULL,
+    `requested_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `under_2_hours` BOOLEAN NOT NULL DEFAULT FALSE,
+    `status` ENUM('PENDING', 'APPROVED', 'REJECTED') NOT NULL DEFAULT 'PENDING',
+    `processed_by` INT NULL,
+    `processed_at` DATETIME NULL,
+    `decision_note` TEXT NULL,
+    `approved_refund_amount` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+    `refund_status` ENUM('NOT_REQUIRED', 'PENDING', 'PARTIAL', 'COMPLETED') NOT NULL DEFAULT 'NOT_REQUIRED',
+    `bank_details_encrypted` TEXT NULL,
+    INDEX `idx_cancel_requests_status_time` (`status`, `requested_at`),
+    INDEX `idx_cancel_requests_appointment` (`appointment_id`, `requested_at`),
+    INDEX `idx_cancel_requests_patient` (`patient_id`, `requested_at`),
+    CONSTRAINT `fk_cancel_request_appointment` FOREIGN KEY (`appointment_id`) REFERENCES `appointments`(`appointment_id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_cancel_request_invoice` FOREIGN KEY (`invoice_id`) REFERENCES `invoices`(`id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_cancel_request_patient` FOREIGN KEY (`patient_id`) REFERENCES `users`(`id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_cancel_request_admin` FOREIGN KEY (`processed_by`) REFERENCES `users`(`id`) ON DELETE SET NULL,
+    CONSTRAINT `chk_cancel_request_refund_amount` CHECK (`approved_refund_amount` >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `appointment_refunds` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `cancellation_request_id` BIGINT UNSIGNED NOT NULL,
+    `payment_id` INT NOT NULL,
+    `amount` DECIMAL(12, 2) NOT NULL,
+    `refund_method` ENUM('BANK_TRANSFER', 'CASH_COUNTER') NOT NULL,
+    `status` ENUM('PENDING', 'COMPLETED') NOT NULL DEFAULT 'PENDING',
+    `confirmed_by` INT NULL,
+    `confirmed_at` DATETIME NULL,
+    `reference_code` VARCHAR(150) NULL,
+    `note` TEXT NULL,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `uq_cancellation_refund_payment` (`cancellation_request_id`, `payment_id`),
+    INDEX `idx_appointment_refunds_payment_status` (`payment_id`, `status`),
+    CONSTRAINT `fk_appointment_refund_request` FOREIGN KEY (`cancellation_request_id`) REFERENCES `appointment_cancellation_requests`(`id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_appointment_refund_payment` FOREIGN KEY (`payment_id`) REFERENCES `payments`(`payment_id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_appointment_refund_admin` FOREIGN KEY (`confirmed_by`) REFERENCES `users`(`id`) ON DELETE SET NULL,
+    CONSTRAINT `chk_appointment_refund_amount` CHECK (`amount` > 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `stock_movements` (

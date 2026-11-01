@@ -46,6 +46,7 @@ const Booking = () => {
   const [symptomsError, setSymptomsError] = useState('');
   const [slotsLoading, setSlotsLoading] = useState(false);
   const suggestedSpecialty = location.state?.suggestedSpecialty || '';
+  const suggestedSpecialtyId = location.state?.suggestedSpecialtyId || null;
   const [bookingSymptoms, setBookingSymptoms] = useState(typeof location.state?.initialSymptoms === 'string' ? location.state.initialSymptoms : '');
   const requestedServiceId = new URLSearchParams(location.search).get('service_id') || location.state?.selectedService?.id;
   const [selectedServiceId, setSelectedServiceId] = useState(requestedServiceId ? String(requestedServiceId) : '');
@@ -146,11 +147,18 @@ const Booking = () => {
         if (!active) return;
         const rows = result.data || [];
         setServices(rows);
-        setSelectedServiceId((current) => rows.some((service) => String(service.id) === String(current)) ? current : String(rows[0]?.id || ''));
+        setSelectedServiceId((current) => {
+          if (requestedServiceId && rows.some((service) => String(service.id) === String(requestedServiceId))) return String(requestedServiceId);
+          if (!current && suggestedSpecialtyId) {
+            const suggestedService = rows.find((service) => Number(service.specialty_id) === Number(suggestedSpecialtyId));
+            if (suggestedService) return String(suggestedService.id);
+          }
+          return rows.some((service) => String(service.id) === String(current)) ? current : String(rows[0]?.id || '');
+        });
       })
       .catch(() => { if (active) setCatalogError('Không tải được danh sách dịch vụ. Vui lòng thử lại.'); });
     return () => { active = false; };
-  }, []);
+  }, [requestedServiceId, suggestedSpecialtyId]);
 
   useEffect(() => {
     if (!passedService?.specialty_id) {
@@ -236,6 +244,7 @@ const Booking = () => {
       const res = await axiosClient.post('/appointments', {
         doctor_id: Number(selectedDoctorId),
         service_id: passedService?.id,
+        payment_method: payMethod === 'CASH' ? 'CASH' : 'BANK_TRANSFER',
         slot_id: Number(selectedSlot),
         appointment_date: selectedDate,
         initial_symptoms: bookingSymptoms.trim(),
@@ -799,6 +808,7 @@ const Booking = () => {
           appointmentId={createdAppointmentId}
           patientName={patientInfo.fullName}
           amount={passedService?.price}
+          initialPaymentMethod="BANK_TRANSFER"
           onSuccess={() => {
               setPaymentConfirmed(true);
             setIsPaymentModalOpen(false);
