@@ -19,6 +19,7 @@ router.get('/medicine-units', adminController.getMedicineUnits);
 router.post('/medicines', adminController.createMedicine);
 router.put('/medicines/:id', adminController.updateMedicine);
 router.delete('/medicines/:id', adminController.deleteMedicine);
+router.patch('/medicines/:id/reactivate', adminController.reactivateMedicine);
 router.get('/medicines/:id/lots', adminController.getMedicineLots);
 router.post('/medicines/:id/lots', adminController.receiveMedicineBatch);
 router.post('/medicines/:id/lots/classify', adminController.classifyLegacyMedicineStock);

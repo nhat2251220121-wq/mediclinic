@@ -272,6 +272,18 @@ const deleteMedicine = async (req, res, next) => {
     return deactivateCatalogRecord(req, res, next, { table: 'drugs', idColumn: 'drug_id', message: 'Đã ngừng sử dụng thuốc. Đơn thuốc và lịch sử cấp phát cũ vẫn được giữ.', alreadyMessage: 'Thuốc đã được ngừng sử dụng trước đó.' });
 };
 
+const reactivateMedicine = async (req, res, next) => {
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ success: false, message: 'Mã thuốc không hợp lệ.' });
+    try {
+        const [result] = await pool.query('UPDATE drugs SET is_active = TRUE WHERE drug_id = ? AND is_active = FALSE', [id]);
+        if (result.affectedRows) return res.json({ success: true, message: 'Đã kích hoạt lại thuốc. Có thể chọn thuốc cho đơn mới.' });
+        const [rows] = await pool.query('SELECT is_active FROM drugs WHERE drug_id = ? LIMIT 1', [id]);
+        if (!rows.length) return res.status(404).json({ success: false, message: 'Không tìm thấy thuốc.' });
+        return res.json({ success: true, alreadyActive: true, message: 'Thuốc đang kinh doanh.' });
+    } catch (error) { return next(error); }
+};
+
 const getMedicineLots = async (req, res, next) => {
     try {
         const drugId = Number(req.params.id);
@@ -1029,7 +1041,7 @@ const updatePatient = async (req, res, next) => {
 
 module.exports = {
     getDashboardStats,
-    getMedicines, getMedicineUnits, createMedicine, updateMedicine, deleteMedicine,
+    getMedicines, getMedicineUnits, createMedicine, updateMedicine, deleteMedicine, reactivateMedicine,
     getMedicineLots, receiveMedicineBatch, classifyLegacyMedicineStock, changeMedicineBatchStock, writeOffMedicineBatch,
     getMealRelations, createMealRelation, updateMealRelation, deactivateMealRelation,
     getSpecialties, createSpecialty, updateSpecialty, deleteSpecialty,

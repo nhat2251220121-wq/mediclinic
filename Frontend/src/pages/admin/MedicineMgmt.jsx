@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axiosClient from '../../api/axiosClient';
-import { Pill, Plus, Search, Edit, Trash2, X, RefreshCw, Save, Check, Boxes, AlertTriangle } from 'lucide-react';
+import { Pill, Plus, Search, Edit, Archive, X, RefreshCw, Save, Check, Boxes, AlertTriangle } from 'lucide-react';
+
+const medicineIsActive = (value) => value === true || Number(value) === 1;
 
 const todayVietnam = () => {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
@@ -46,6 +48,7 @@ const MedicineMgmt = () => {
   const [pendingDeleteId, setPendingDeleteId] = useState(null);
   const [pendingRelationId, setPendingRelationId] = useState(null);
   const [actionNotice, setActionNotice] = useState(null);
+  const [medicineStatusTab, setMedicineStatusTab] = useState('ACTIVE');
   const [stockFilter, setStockFilter] = useState('ALL');
   const [lotsDrug, setLotsDrug] = useState(null);
   const [lotsData, setLotsData] = useState(null);
@@ -189,25 +192,38 @@ const MedicineMgmt = () => {
   };
 
   const handleDeleteDrug = async (drug) => {
-    if (!window.confirm(`Ngừng sử dụng thuốc “${drug.name}”? Thuốc sẽ không còn dùng cho đơn mới; đơn thuốc và lịch sử cấp phát cũ được giữ nguyên.`)) return;
+    if (!window.confirm(`Ngừng kinh doanh thuốc “${drug.name}”? Thuốc sẽ không còn dùng cho đơn mới. Đơn thuốc, tồn kho và lịch sử kho cũ vẫn được giữ.`)) return;
     setPendingDeleteId(drug.id); setActionNotice(null);
     try {
       const result = await axiosClient.delete(`/admin/medicines/${drug.id}`);
-      setDrugs((current) => current.map((item) => item.id === drug.id ? { ...item, is_active: false } : item));
-      setActionNotice({ type: 'success', message: result.message || `Đã ngừng sử dụng “${drug.name}”.` });
+      setActionNotice({ type: 'success', message: result.message || `Đã ngừng kinh doanh “${drug.name}”. Thuốc được chuyển sang danh sách đã ngừng.` });
       await fetchMedicines();
     } catch (err) {
       setActionNotice({ type: 'error', message: err.message || 'Không ngừng được thuốc. Dữ liệu chưa bị xóa.' });
     } finally { setPendingDeleteId(null); }
   };
 
+  const reactivateDrug = async (drug) => {
+    if (!window.confirm(`Kích hoạt lại thuốc “${drug.name}” để có thể chọn cho đơn mới? Tồn kho và lịch sử cũ không thay đổi.`)) return;
+    setPendingDeleteId(drug.id); setActionNotice(null);
+    try {
+      const result = await axiosClient.patch(`/admin/medicines/${drug.id}/reactivate`);
+      setActionNotice({ type: 'success', message: result.message || `Đã kích hoạt lại “${drug.name}”.` });
+      await fetchMedicines();
+    } catch (err) {
+      setActionNotice({ type: 'error', message: err.message || 'Không kích hoạt lại được thuốc.' });
+    } finally { setPendingDeleteId(null); }
+  };
+
   const filteredDrugs = drugs.filter(d =>
+    medicineIsActive(d.is_active) === (medicineStatusTab === 'ACTIVE') &&
     (d.name?.toLowerCase().includes(searchTerm.toLowerCase()) || d.activeIngredient?.toLowerCase().includes(searchTerm.toLowerCase())) &&
-    (stockFilter === 'ALL' || (stockFilter === 'ACTIVE' && d.is_active) || (stockFilter === 'INACTIVE' && !d.is_active) ||
-      (stockFilter === 'LOW' && Number(d.usable_quantity) <= Number(d.low_stock_threshold)) ||
+    (stockFilter === 'ALL' || (stockFilter === 'LOW' && Number(d.usable_quantity) <= Number(d.low_stock_threshold)) ||
       (stockFilter === 'EXPIRING' && Number(d.expiring_90_quantity) > 0) || (stockFilter === 'EXPIRED' && Number(d.expired_quantity) > 0) ||
       (stockFilter === 'UNKNOWN' && Number(d.untracked_quantity) > 0))
   );
+  const activeDrugCount = drugs.filter((drug) => medicineIsActive(drug.is_active)).length;
+  const inactiveDrugCount = drugs.length - activeDrugCount;
 
   const openLots = async (drug, action = null, preserveNotice = false) => {
     setLotsDrug(drug); setLotsData(null); setLotAction(action); if (!preserveNotice) setLotNotice(null); setLotsLoading(true);
@@ -222,10 +238,11 @@ const MedicineMgmt = () => {
     const title = lotAction === 'RECEIVE' ? `Nhập ${lotForm.quantity} đơn vị vào kho thuốc ${lotsDrug.name}` : lotAction === 'CLASSIFY' ? `Gắn lô đã xác minh cho ${lotForm.quantity} đơn vị tồn cũ của ${lotsDrug.name}` : lotAction === 'ADJUST' ? `Điều chỉnh ${lotForm.quantity_delta} đơn vị của lô thuốc ${lotsDrug.name}` : `Ghi nhận hủy ${lotForm.quantity} đơn vị thuốc ${lotsDrug.name}`;
     if (lotAction !== 'RECEIVE' && !window.confirm(`${title}? Lý do: ${lotForm.note || 'chưa nhập'}`)) return;
     try {
-      if (lotAction === 'RECEIVE') await axiosClient.post(`/admin/medicines/${lotsDrug.id}/lots`, lotForm);
-      if (lotAction === 'CLASSIFY') await axiosClient.post(`/admin/medicines/${lotsDrug.id}/lots/classify`, lotForm);
-      if (lotAction === 'ADJUST') await axiosClient.post(`/admin/medicine-lots/${lotForm.batch_id}/adjust`, { quantity_delta: Number(lotForm.quantity_delta), note: lotForm.note });
-      if (lotAction === 'WRITE_OFF') await axiosClient.post(`/admin/medicine-lots/${lotForm.batch_id}/write-off`, { quantity: Number(lotForm.quantity), reason_type: lotForm.reason_type, note: lotForm.note });
+      let result;
+      if (lotAction === 'RECEIVE') result = await axiosClient.post(`/admin/medicines/${lotsDrug.id}/lots`, lotForm);
+      if (lotAction === 'CLASSIFY') result = await axiosClient.post(`/admin/medicines/${lotsDrug.id}/lots/classify`, lotForm);
+      if (lotAction === 'ADJUST') result = await axiosClient.post(`/admin/medicine-lots/${lotForm.batch_id}/adjust`, { quantity_delta: Number(lotForm.quantity_delta), note: lotForm.note });
+      if (lotAction === 'WRITE_OFF') result = await axiosClient.post(`/admin/medicine-lots/${lotForm.batch_id}/write-off`, { quantity: Number(lotForm.quantity), reason_type: lotForm.reason_type, note: lotForm.note });
       setLotNotice({ type: 'success', message: result?.message || 'Đã ghi nhận thao tác kho và lịch sử.' });
       setLotAction(null);
       await fetchMedicines(); await openLots(lotsDrug, null, true);
@@ -285,10 +302,18 @@ const MedicineMgmt = () => {
             />
           </div>
         </div>
+        <div className="flex flex-wrap gap-2 border-b border-slate-100 pb-3" role="tablist" aria-label="Trạng thái thuốc">
+          {[{ id: 'ACTIVE', label: 'Đang kinh doanh', count: activeDrugCount }, { id: 'INACTIVE', label: 'Đã ngừng kinh doanh', count: inactiveDrugCount }].map((tab) => (
+            <button key={tab.id} type="button" role="tab" aria-selected={medicineStatusTab === tab.id} onClick={() => setMedicineStatusTab(tab.id)}
+              className={`rounded-xl border px-4 py-2 text-sm font-semibold transition ${medicineStatusTab === tab.id ? 'border-teal-200 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}>
+              {tab.label} <span className="ml-1 rounded-full bg-white/80 px-2 py-0.5 text-xs tabular-nums">{tab.count}</span>
+            </button>
+          ))}
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <label className="text-xs font-semibold text-slate-600" htmlFor="medicine-stock-filter">Lọc tồn/hạn</label>
           <select id="medicine-stock-filter" value={stockFilter} onChange={(event) => setStockFilter(event.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
-            <option value="ALL">Tất cả</option><option value="ACTIVE">Đang kinh doanh</option><option value="INACTIVE">Đã ngừng kinh doanh</option><option value="LOW">Tồn thấp</option><option value="EXPIRING">Sắp hết hạn (90 ngày)</option><option value="EXPIRED">Đã hết hạn</option><option value="UNKNOWN">Chưa xác định hạn</option>
+            <option value="ALL">Tất cả</option><option value="LOW">Tồn thấp</option><option value="EXPIRING">Sắp hết hạn (90 ngày)</option><option value="EXPIRED">Đã hết hạn</option><option value="UNKNOWN">Chưa xác định hạn</option>
           </select>
           <p className="text-xs leading-5 text-slate-500">Tồn dùng được chỉ tính từ lô chưa hết hạn; tồn cũ chưa rõ lô được giữ riêng và không thể giao.</p>
         </div>
@@ -308,8 +333,8 @@ const MedicineMgmt = () => {
                     <td className="px-4 py-3.5"><p className="whitespace-nowrap font-semibold tabular-nums text-slate-900">Dùng được <span className="text-teal-800">{Number(d.usable_quantity || 0)}</span></p><p className="mt-1 text-xs leading-4 text-slate-500">Tổng {Number(d.stock_quantity || 0)} · Chưa rõ {Number(d.untracked_quantity || 0)}</p><p className="text-xs leading-4 text-slate-500">Hết hạn {Number(d.expired_quantity || 0)}</p></td>
                     <td className="px-4 py-3.5"><p className={`font-medium leading-5 ${expiry.tone}`}>{expiry.label}</p><p className="mt-0.5 text-xs leading-4 text-slate-500">{expiry.detail}</p></td>
                     <td className="px-4 py-3.5">{alerts.length ? <div className="flex flex-wrap items-center gap-1.5"><span className={`inline-flex whitespace-nowrap rounded-full border px-2 py-1 text-[11px] font-medium ${alerts[0].className}`}>{alerts[0].label}</span>{alerts.length > 1 && <span className="whitespace-nowrap text-[11px] text-slate-500">+{alerts.length - 1}</span>}</div> : <span className="text-xs text-slate-500">Bình thường</span>}{alerts.length > 1 && <p className="mt-1 text-[11px] text-slate-500">Mở lô để xem đủ cảnh báo</p>}</td>
-                    <td className="px-4 py-3.5">{d.is_active ? <span className="inline-flex whitespace-nowrap rounded-full border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-800">Đang dùng</span> : <span className="inline-flex whitespace-nowrap rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">Đã ngừng</span>}</td>
-                    <td className="px-4 py-3.5"><div className="flex items-center justify-center gap-1.5"><button type="button" title="Xem lô và lịch sử kho" aria-label={`Xem lô và lịch sử kho của ${d.name}`} onClick={() => openLots(d)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-teal-800 transition hover:bg-teal-50"><Boxes className="h-4 w-4" /></button><button type="button" title="Sửa thông tin thuốc" aria-label={`Sửa ${d.name}`} onClick={() => handleOpenEditModal(d)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-100"><Edit className="h-4 w-4" /></button>{d.is_active && <button type="button" disabled={pendingDeleteId === d.id} title="Ngừng sử dụng thuốc" aria-label={`Ngừng sử dụng ${d.name}`} onClick={() => handleDeleteDrug(d)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-amber-200 hover:bg-amber-50 hover:text-amber-800 disabled:opacity-50">{pendingDeleteId === d.id ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}</button>}</div></td>
+                    <td className="px-4 py-3.5">{medicineIsActive(d.is_active) ? <span className="inline-flex whitespace-nowrap rounded-full border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-800">Đang dùng</span> : <span className="inline-flex whitespace-nowrap rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">Đã ngừng</span>}</td>
+                    <td className="px-4 py-3.5"><div className="flex items-center justify-center gap-1.5"><button type="button" title="Xem lô và lịch sử kho" aria-label={`Xem lô và lịch sử kho của ${d.name}`} onClick={() => openLots(d)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-teal-800 transition hover:bg-teal-50"><Boxes className="h-4 w-4" /></button><button type="button" title="Sửa thông tin thuốc" aria-label={`Sửa ${d.name}`} onClick={() => handleOpenEditModal(d)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-100"><Edit className="h-4 w-4" /></button>{medicineIsActive(d.is_active) ? <button type="button" disabled={pendingDeleteId === d.id} title="Ngừng kinh doanh thuốc" aria-label={`Ngừng kinh doanh ${d.name}`} onClick={() => handleDeleteDrug(d)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-amber-200 hover:bg-amber-50 hover:text-amber-800 disabled:opacity-50">{pendingDeleteId === d.id ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Archive className="h-4 w-4" />}</button> : <button type="button" disabled={pendingDeleteId === d.id} title="Kích hoạt lại thuốc" aria-label={`Kích hoạt lại ${d.name}`} onClick={() => reactivateDrug(d)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-teal-200 bg-white text-teal-700 transition hover:bg-teal-50 disabled:opacity-50">{pendingDeleteId === d.id ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}</button>}</div></td>
                   </tr>;
                 })}
               </tbody>
@@ -321,10 +346,10 @@ const MedicineMgmt = () => {
               const alerts = getMedicineAlertSummary(d);
               const expiry = getExpirySummary(d);
               return <article key={d.id} className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <header className="flex min-w-0 items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-2.5"><span className="shrink-0 rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold tabular-nums text-slate-600">#{d.id}</span><div className="min-w-0"><h4 className="break-words font-semibold leading-5 text-slate-900">{d.name}</h4><p className="mt-0.5 break-words text-xs leading-4 text-slate-500">{d.activeIngredient || 'Chưa cập nhật hoạt chất'}</p></div></div>{d.is_active ? <span className="shrink-0 rounded-full border border-teal-200 bg-teal-50 px-2 py-1 text-[11px] font-medium text-teal-800">Đang dùng</span> : <span className="shrink-0 rounded-full border border-slate-200 bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600">Đã ngừng</span>}</header>
+                <header className="flex min-w-0 items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-2.5"><span className="shrink-0 rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold tabular-nums text-slate-600">#{d.id}</span><div className="min-w-0"><h4 className="break-words font-semibold leading-5 text-slate-900">{d.name}</h4><p className="mt-0.5 break-words text-xs leading-4 text-slate-500">{d.activeIngredient || 'Chưa cập nhật hoạt chất'}</p></div></div>{medicineIsActive(d.is_active) ? <span className="shrink-0 rounded-full border border-teal-200 bg-teal-50 px-2 py-1 text-[11px] font-medium text-teal-800">Đang dùng</span> : <span className="shrink-0 rounded-full border border-slate-200 bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600">Đã ngừng</span>}</header>
                 <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-y border-slate-100 py-3 text-sm"><div><p className="text-xs text-slate-500">Giá / đơn vị</p><p className="mt-1 break-words font-semibold tabular-nums text-slate-800">{Number(d.price) > 0 ? `${Number(d.price).toLocaleString('vi-VN')} ₫` : 'Chưa cập nhật'}</p><p className="text-xs text-slate-500">{d.unit_name || 'Chưa cập nhật'}</p></div><div><p className="text-xs text-slate-500">Tồn dùng được</p><p className="mt-1 font-semibold tabular-nums text-teal-800">{Number(d.usable_quantity || 0)}</p><p className="text-xs leading-4 text-slate-500">Tổng {Number(d.stock_quantity || 0)} · Chưa rõ {Number(d.untracked_quantity || 0)}</p></div><div><p className="text-xs text-slate-500">Hết hạn</p><p className="mt-1 font-medium tabular-nums text-slate-800">{Number(d.expired_quantity || 0)}</p></div><div><p className="text-xs text-slate-500">Hạn gần nhất</p><p className={`mt-1 font-medium ${expiry.tone}`}>{expiry.label}</p><p className="text-xs text-slate-500">{expiry.detail}</p></div></div>
                 <div className="mt-3"><p className="mb-1.5 text-xs font-medium text-slate-500">Cảnh báo</p>{alerts.length ? <div className="flex flex-wrap items-center gap-1.5"><span className={`inline-flex whitespace-nowrap rounded-full border px-2 py-1 text-[11px] font-medium ${alerts[0].className}`}>{alerts[0].label}</span>{alerts.length > 1 && <span className="text-xs text-slate-500">+{alerts.length - 1} cảnh báo khác</span>}</div> : <span className="text-xs text-slate-500">Bình thường</span>}</div>
-                <footer className="mt-4 flex gap-2"><button type="button" title="Xem lô và lịch sử kho" aria-label={`Xem lô và lịch sử kho của ${d.name}`} onClick={() => openLots(d)} className="inline-flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-[10px] font-medium text-teal-800 hover:bg-teal-50"><Boxes className="h-4 w-4" /><span>Lô và tồn</span></button><button type="button" title="Sửa thông tin thuốc" aria-label={`Sửa ${d.name}`} onClick={() => handleOpenEditModal(d)} className="inline-flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-[10px] font-medium text-slate-700 hover:bg-slate-100"><Edit className="h-4 w-4" /><span>Sửa</span></button>{d.is_active && <button type="button" disabled={pendingDeleteId === d.id} title="Ngừng sử dụng thuốc" aria-label={`Ngừng sử dụng ${d.name}`} onClick={() => handleDeleteDrug(d)} className="inline-flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-[10px] font-medium text-slate-600 hover:bg-amber-50 hover:text-amber-800 disabled:opacity-50">{pendingDeleteId === d.id ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}<span>Ngừng</span></button>}</footer>
+                <footer className="mt-4 flex gap-2"><button type="button" title="Xem lô và lịch sử kho" aria-label={`Xem lô và lịch sử kho của ${d.name}`} onClick={() => openLots(d)} className="inline-flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-[10px] font-medium text-teal-800 hover:bg-teal-50"><Boxes className="h-4 w-4" /><span>Lô và tồn</span></button><button type="button" title="Sửa thông tin thuốc" aria-label={`Sửa ${d.name}`} onClick={() => handleOpenEditModal(d)} className="inline-flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-[10px] font-medium text-slate-700 hover:bg-slate-100"><Edit className="h-4 w-4" /><span>Sửa</span></button>{medicineIsActive(d.is_active) ? <button type="button" disabled={pendingDeleteId === d.id} title="Ngừng kinh doanh thuốc" aria-label={`Ngừng kinh doanh ${d.name}`} onClick={() => handleDeleteDrug(d)} className="inline-flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-[10px] font-medium text-slate-600 hover:bg-amber-50 hover:text-amber-800 disabled:opacity-50">{pendingDeleteId === d.id ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Archive className="h-4 w-4" />}<span>Ngừng kinh doanh</span></button> : <button type="button" disabled={pendingDeleteId === d.id} title="Kích hoạt lại thuốc" aria-label={`Kích hoạt lại ${d.name}`} onClick={() => reactivateDrug(d)} className="inline-flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-lg border border-teal-200 px-2 py-1.5 text-[10px] font-medium text-teal-700 hover:bg-teal-50 disabled:opacity-50">{pendingDeleteId === d.id ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}<span>Kích hoạt lại</span></button>}</footer>
               </article>;
             })}
           </div>
