@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MessageSquare, X, Send, Bot, Sparkles, User, Calendar, Clock, DollarSign, CheckCircle2, ChevronRight, Minimize2 } from 'lucide-react';
+import { Send, Bot, ChevronRight, Minimize2 } from 'lucide-react';
 import axiosClient from '../../api/axiosClient';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { isSymptomBookingAllowed } from '../../utils/symptomAssistant.mjs';
+import { formatSymptomReply, getAssistantNavigationIntent, isSymptomBookingAllowed } from '../../utils/symptomAssistant.mjs';
 
 const AIChatWidget = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -12,14 +12,14 @@ const AIChatWidget = () => {
     {
       id: 1,
       sender: 'ai',
-      text: 'Xin chào. Tôi có thể hỗ trợ định hướng chuyên khoa. Khi AI được sử dụng, mô tả sẽ được gửi tới OpenAI để xử lý; MediClinic không lưu thành lịch sử trợ lý. Không nhập thông tin định danh. Gợi ý không thay thế chẩn đoán của nhân viên y tế.',
+      text: 'Xin chào! Tôi có thể giúp bạn định hướng chuyên khoa. Vui lòng không nhập tên, số điện thoại hoặc thông tin cá nhân. Tôi không chẩn đoán hay kê đơn.',
       time: 'Vừa xong'
     }
   ]);
   const [loading, setLoading] = useState(false);
   const [retryText, setRetryText] = useState('');
   const [emergencyBlocked, setEmergencyBlocked] = useState(false);
-  const { user, isAuthenticated } = useAuth();
+  const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const messagesEndRef = useRef(null);
 
@@ -51,62 +51,16 @@ const AIChatWidget = () => {
     setRetryText('');
 
     try {
-      // 1. Phân tích nội dung tin nhắn để phản hồi phù hợp phong cách AI Agent của đồ án
-      const lower = userText.toLowerCase();
-
-      // Kiểm tra câu hỏi về lịch hẹn cá nhân
-      if (lower.includes('lịch hẹn') || lower.includes('lịch khám của tôi') || lower.includes('khi nào tôi đi khám')) {
-        if (!isAuthenticated) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: Date.now() + 1,
-              sender: 'ai',
-              text: 'Bạn cần đăng nhập để xem lịch hẹn cá nhân.',
-              action: { text: 'Đi đến trang Đăng nhập', link: '/login' },
-              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            }
-          ]);
-          setLoading(false);
-          return;
-        }
-
-        // Đã đăng nhập -> Lấy danh sách lịch hẹn từ backend
-        try {
-          const res = await axiosClient.get('/appointments');
-          const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
-          const upcoming = (res.data || []).filter((appointment) => appointment.appointment_date >= today && ['PENDING', 'CONFIRMED'].includes(appointment.status));
-          if (res.success && upcoming.length > 0) {
-            const latest = upcoming[0];
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: Date.now() + 1,
-                sender: 'ai',
-                text: `Lịch hẹn sắp tới của bạn:\n\n• Ngày khám: ${latest.appointment_date}\n• Giờ khám: ${latest.time_slot}\n• Bác sĩ: ${latest.doctor_name}${latest.specialty_name ? ` (${latest.specialty_name})` : ''}${latest.room_name ? `\n• Phòng khám: ${latest.room_name}` : ''}\n• Trạng thái: ${latest.status === 'CONFIRMED' ? 'Đã xác nhận' : 'Đang chờ duyệt'}`,
-                action: { text: 'Xem toàn bộ lịch sử khám', link: '/patient/history' },
-                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-              }
-            ]);
-          } else {
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: Date.now() + 1,
-                sender: 'ai',
-                text: 'Bạn chưa có lịch hẹn sắp tới đang chờ hoặc đã xác nhận.',
-                action: { text: 'Đặt lịch khám ngay', link: '/patient/booking' },
-                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-              }
-            ]);
-          }
-          setLoading(false);
-          return;
-        } catch (err) {
-          setMessages((prev) => [...prev, { id: Date.now() + 1, sender: 'ai', text: err.message || 'Không tải được lịch hẹn lúc này.', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
-          setLoading(false);
-          return;
-        }
+      const navigationIntent = getAssistantNavigationIntent(userText, isAuthenticated);
+      if (navigationIntent) {
+        setMessages((prev) => [...prev, {
+          id: Date.now() + 1,
+          sender: 'ai',
+          text: navigationIntent.message,
+          action: navigationIntent.action,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }]);
+        return;
       }
 
       // Stateless classification: the symptom text is not persisted as chat history.
@@ -114,7 +68,7 @@ const AIChatWidget = () => {
       if (res.success && res.data) {
         const d = res.data;
         setEmergencyBlocked(d.urgency_level === 'EMERGENCY');
-        const reply = `${d.recommendation_source === 'AI' ? 'Gợi ý từ AI' : 'Gợi ý theo quy tắc dự phòng'}:\n\n• Chuyên khoa: ${d.predicted_specialty || 'Chưa xác định — bạn có thể tự chọn dịch vụ'}\n• Mức độ: ${d.urgency_level} — ${d.urgency_text}\n\nLời khuyên ban đầu: ${d.initial_advice}${d.follow_up_questions?.length ? `\n\nCâu hỏi cần làm rõ:\n${d.follow_up_questions.map((question) => `• ${question}`).join('\n')}\nBạn có thể bổ sung câu trả lời vào mô tả rồi gửi lại.` : ''}\n\n${d.disclaimer}`;
+        const reply = formatSymptomReply(d);
 
         setMessages((prev) => [
           ...prev,
@@ -148,7 +102,7 @@ const AIChatWidget = () => {
         {
           id: Date.now() + 1,
           sender: 'ai',
-            text: 'Không thể xử lý mô tả lúc này. Bạn có thể thử lại sau.',
+          text: 'Tạm thời chưa xử lý được mô tả. Bạn có thể thử lại sau.',
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]);
@@ -169,7 +123,7 @@ const AIChatWidget = () => {
           <button
             onClick={() => setIsOpen(true)}
             className="w-14 h-14 bg-sky-700 hover:bg-sky-800 text-white rounded-full shadow-xl transition-colors flex items-center justify-center"
-            aria-label="Tư vấn triệu chứng cùng AI"
+            aria-label="Trợ lý định hướng triệu chứng"
           >
             <div className="relative">
               <Bot className="w-7 h-7" />
@@ -178,7 +132,7 @@ const AIChatWidget = () => {
           </button>
           {/* Tooltip */}
           <div className="absolute bottom-full right-0 mb-2 px-3 py-1.5 bg-slate-800 text-white text-xs font-semibold rounded-xl shadow-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none">
-            🤖 Tư vấn triệu chứng cùng AI
+            🤖 Trợ lý định hướng chuyên khoa
             <div className="absolute top-full right-4 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-slate-800"></div>
           </div>
         </div>
@@ -186,18 +140,18 @@ const AIChatWidget = () => {
 
       {/* Cửa sổ Chatbot y hệt Hình 3.40 (Trang 101-104) */}
       {isOpen && (
-        <div className="w-[min(25rem,calc(100vw-1.5rem))] h-[min(36rem,calc(100dvh-5rem))] min-h-80 bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-fadeIn">
+        <div className="w-[min(25rem,calc(100vw-1.5rem))] h-[min(36rem,calc(100dvh-5rem))] min-h-80 max-h-[calc(100dvh-1.5rem)] min-w-0 bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-fadeIn">
           {/* Header */}
           <div className="bg-sky-700 text-white p-4 flex items-center justify-between shadow-sm">
-            <div className="flex items-center gap-3">
+            <div className="flex min-w-0 items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20">
                 <Bot className="w-6 h-6 text-white" />
               </div>
-              <div>
+              <div className="min-w-0 flex-1">
                 <h3 className="font-bold text-sm tracking-wide flex items-center gap-1.5">
                   <span>Xin chào! 👋</span>
                 </h3>
-                <p className="text-[11px] text-sky-100">Bắt đầu trò chuyện. Chúng tôi luôn sẵn sàng hỗ trợ bạn 24/7.</p>
+                <p className="break-words text-[11px] text-sky-100">Bắt đầu trò chuyện. Chúng tôi luôn sẵn sàng hỗ trợ bạn 24/7.</p>
               </div>
             </div>
             <button
@@ -231,7 +185,7 @@ const AIChatWidget = () => {
           </div>}
 
           {/* Body tin nhắn */}
-          <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-slate-50/50 text-sm">
+          <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50 text-sm">
             {messages.map((msg) => (
               <div
                 key={msg.id}
@@ -243,9 +197,9 @@ const AIChatWidget = () => {
                   </div>
                 )}
 
-                <div className={`max-w-[82%] space-y-2`}>
+                <div className="max-w-[82%] min-w-0 space-y-2">
                   <div
-                    className={`p-3.5 rounded-2xl shadow-sm text-xs leading-relaxed whitespace-pre-line ${
+                    className={`break-words p-3.5 rounded-2xl shadow-sm text-xs leading-relaxed whitespace-pre-line ${
                       msg.sender === 'user'
                         ? 'bg-sky-600 text-white rounded-tr-none'
                         : 'bg-white border border-slate-200 text-slate-800 rounded-tl-none'
@@ -280,7 +234,7 @@ const AIChatWidget = () => {
                 <div className="w-7 h-7 rounded-xl bg-sky-100 text-sky-600 flex items-center justify-center">
                   <Bot className="w-4 h-4 animate-spin" />
                 </div>
-                <span>Trợ lý AI đang suy nghĩ và tổng hợp dữ liệu...</span>
+                <span>Đang xem xét mô tả của bạn...</span>
               </div>
             )}
             <div ref={messagesEndRef} />
@@ -294,7 +248,7 @@ const AIChatWidget = () => {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Mô tả triệu chứng (tối đa 2.000 ký tự)..."
-              className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition-all"
+              className="min-w-0 flex-1 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition-all sm:px-4"
             />
             <button
               type="submit"
