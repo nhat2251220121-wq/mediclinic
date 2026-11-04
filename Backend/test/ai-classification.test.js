@@ -79,26 +79,84 @@ test('nhận diện dấu hiệu cấp cứu trước provider và cấm đặt 
   assert.equal(result.recommendation_source, 'RULE_BASED');
   const { isSymptomBookingAllowed } = await import('../../Frontend/src/utils/symptomAssistant.mjs');
   assert.equal(isSymptomBookingAllowed(result), false);
-  assert.equal(isSymptomBookingAllowed({ urgency_level: 'ROUTINE', booking_allowed: true, specialty_id: null }), true);
+  assert.equal(isSymptomBookingAllowed({ urgency_level: 'ROUTINE', booking_allowed: true, predicted_specialty: null, specialty_id: null }), false);
   assert.equal(isSymptomBookingAllowed({ urgency_level: 'URGENT', booking_allowed: false }), false);
 });
 
-test('không tìm được chuyên khoa thì cho tự chọn dịch vụ, không tự bịa ID', async () => {
+test('không tìm được chuyên khoa thì không tự gán ID hoặc mở nút đặt lịch', async () => {
   const available = specialties.filter((specialty) => specialty.id !== 12);
   const result = classifyByRules('đau răng', available);
   assert.equal(result.specialty_id, null);
   assert.equal(result.predicted_specialty, null);
-  assert.equal(result.booking_allowed, true);
-  assert.match(result.initial_advice, /tự chọn dịch vụ/);
+  assert.equal(result.booking_allowed, false);
+  assert.ok(result.follow_up_questions.length > 0);
+  assert.doesNotMatch(result.initial_advice, /Nội tổng quát/);
   const modelNoMatch = await createSymptomClassifier({ provider: async () => makeCandidate({ predicted_specialty: null, specialty_id: null }), logger: {} })('đau răng', available);
-  assert.equal(modelNoMatch.recommendation_source, 'RULE_BASED');
+  assert.equal(modelNoMatch.recommendation_source, 'AI');
   assert.equal(modelNoMatch.specialty_id, null);
-  assert.equal(modelNoMatch.booking_allowed, true);
+  assert.equal(modelNoMatch.booking_allowed, false);
   let providerCalled = false;
   const noActiveSpecialties = await createSymptomClassifier({ provider: async () => { providerCalled = true; }, logger: {} })('mô tả bất kỳ', []);
   assert.equal(providerCalled, false);
   assert.equal(noActiveSpecialties.specialty_id, null);
-  assert.equal(noActiveSpecialties.booking_allowed, true);
+  assert.equal(noActiveSpecialties.booking_allowed, false);
+});
+
+test('no-specialty AI answer is retained with its clarifying questions', async () => {
+  const candidate = makeCandidate({ predicted_specialty: null, specialty_id: null, follow_up_questions: ['Biểu hiện cụ thể là gì?', 'Bắt đầu từ khi nào?'], booking_allowed: false });
+  const aiNoMatch = await createSymptomClassifier({ provider: async () => candidate, logger: {} })('Mô tả triệu chứng không thuộc danh sách', specialties);
+  assert.equal(aiNoMatch.recommendation_source, 'AI');
+  assert.equal(aiNoMatch.specialty_id, null);
+  assert.equal(aiNoMatch.booking_allowed, false);
+  assert.equal(aiNoMatch.follow_up_questions.length, 2);
+});
+
+test('fever medication request is not prescribed and vague skin concern asks for details', async () => {
+  let providerCalled = false;
+  const classifier = createSymptomClassifier({ provider: async () => { providerCalled = true; return makeCandidate(); }, logger: {} });
+  const fever = await classifier('Có thuốc nào uống hết sốt không?', specialties);
+  assert.equal(fever.specialty_id, null);
+  assert.equal(fever.booking_allowed, false);
+  assert.match(fever.initial_advice, /không thể đề xuất thuốc/i);
+  assert.doesNotMatch(JSON.stringify(fever), /\b\d+\s*(mg|viên)\b|liều\s+\d/i);
+
+  const skin = await classifier('Da mặt của tôi bị xấu nên cần đi khám khoa nào?', specialties);
+  assert.equal(skin.specialty_id, null);
+  assert.equal(skin.booking_allowed, false);
+  assert.ok(skin.follow_up_questions.length > 0 && skin.follow_up_questions.length <= 3);
+  assert.equal(providerCalled, false);
+});
+
+test('Răng Hàm Mặt chỉ được gợi ý nếu chuyên khoa đang hoạt động', () => {
+  const active = [...specialties, { id: 21, name: 'Răng Hàm Mặt' }];
+  const result = classifyByRules('Tôi bị đau răng ê buốt, nên khám gì?', active);
+  assert.equal(result.specialty_id, 21);
+  assert.equal(result.predicted_specialty, 'Răng Hàm Mặt');
+  assert.equal(result.booking_allowed, true);
+
+  const unavailable = classifyByRules('Tôi bị đau răng ê buốt, nên khám gì?', specialties);
+  assert.equal(unavailable.specialty_id, null);
+  assert.equal(unavailable.booking_allowed, false);
+});
+
+test('assistant routes appointment questions to existing pages without inventing lookup results', async () => {
+  const { getAssistantNavigationIntent, formatSymptomReply, isSymptomBookingAllowed } = await import('../../Frontend/src/utils/symptomAssistant.mjs');
+  const availability = getAssistantNavigationIntent('Bác sĩ hôm nay có ca khám nào trống?', true);
+  assert.equal(availability.kind, 'availability');
+  assert.equal(availability.action.link, '/patient/booking');
+  assert.match(availability.message, /chưa tra cứu khung giờ cụ thể/);
+
+  const guestHistory = getAssistantNavigationIntent('Ngày mai tôi có lịch khám không?', false);
+  assert.equal(guestHistory.action.link, '/login');
+  const patientHistory = getAssistantNavigationIntent('Ngày mai tôi có lịch khám không?', true);
+  assert.equal(patientHistory.action.link, '/patient/history');
+
+  const emergency = emergencyResult();
+  assert.equal(isSymptomBookingAllowed(emergency), false);
+  assert.equal(isSymptomBookingAllowed({ booking_allowed: true, urgency_level: 'ROUTINE', predicted_specialty: null, specialty_id: null }), false);
+  const reply = formatSymptomReply(emergency);
+  assert.doesNotMatch(reply, /EMERGENCY|RULE_BASED|AI|fallback/);
+  assert.match(reply, /115/);
 });
 
 test('lỗi provider, timeout và JSON lỗi đều dùng fallback mà không log triệu chứng', async () => {
@@ -108,6 +166,7 @@ test('lỗi provider, timeout và JSON lỗi đều dùng fallback mà không lo
     assert.equal(result.recommendation_source, 'RULE_BASED');
   }
   assert.ok(warnings.every((line) => !line.includes('da bị ngứa')));
+  assert.ok(warnings.every((line) => !line.includes('provider failed')));
 });
 
 test('chặn mô tả rỗng hoặc quá 2.000 ký tự trước provider', async () => {
@@ -122,14 +181,14 @@ test('Responses API request dùng model/config và JSON Schema; không cần g�
   let captured;
   const result = makeCandidate();
   const response = await requestOpenAI({
-    symptoms: 'ngứa da', specialties, apiKey: 'test-only-key', model: 'gpt-5.4-mini',
+    symptoms: 'ngứa da', specialties, apiKey: 'test-only-key', model: 'test-selected-model', baseUrl: 'https://provider.example/v1',
     fetchImpl: async (url, options) => {
       captured = { url, options, body: JSON.parse(options.body) };
       return { ok: true, json: async () => ({ output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(result) }] }] }) };
     }
   });
-  assert.equal(captured.url, 'https://api.openai.com/v1/responses');
-  assert.equal(captured.body.model, 'gpt-5.4-mini');
+  assert.equal(captured.url, 'https://provider.example/v1/responses');
+  assert.equal(captured.body.model, 'test-selected-model');
   assert.equal(captured.body.text.format.type, 'json_schema');
   assert.equal(captured.body.text.format.strict, true);
   assert.equal(captured.options.headers.Authorization, 'Bearer test-only-key');

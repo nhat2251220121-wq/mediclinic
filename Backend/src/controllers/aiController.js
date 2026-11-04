@@ -31,7 +31,7 @@ const createAIController = ({ db = pool, classify = classifySymptomWithAI } = {}
         if (!active || active.name !== result.predicted_specialty) {
           return res.status(200).json({
             success: true,
-            message: 'Chưa tìm được chuyên khoa phù hợp; bạn có thể tự chọn dịch vụ.',
+          message: 'Chưa tìm được chuyên khoa phù hợp. Bạn có thể mô tả rõ hơn.',
             data: {
               ...result,
               predicted_specialty: null,
@@ -40,12 +40,12 @@ const createAIController = ({ db = pool, classify = classifySymptomWithAI } = {}
               urgency_level: result.urgency_level === 'EMERGENCY' ? 'EMERGENCY' : 'ROUTINE',
               urgency_text: result.urgency_level === 'EMERGENCY'
                 ? result.urgency_text
-                : 'Chưa thể gợi ý chuyên khoa từ danh mục đang hoạt động; bạn có thể tự chọn dịch vụ.',
+                : 'Chưa thể gợi ý chuyên khoa phù hợp từ danh mục đang hoạt động.',
               initial_advice: result.urgency_level === 'EMERGENCY'
                 ? result.initial_advice
-                : 'Hệ thống chưa xác định được chuyên khoa phù hợp. Bạn có thể tự chọn dịch vụ trên trang đặt lịch.',
-              follow_up_questions: [],
-              booking_allowed: result.urgency_level !== 'EMERGENCY'
+                : 'Bạn có thể mô tả rõ hơn các biểu hiện và thời điểm bắt đầu.',
+              follow_up_questions: result.urgency_level === 'EMERGENCY' ? [] : ['Bạn đang gặp biểu hiện gì cụ thể và ở vị trí nào?', 'Tình trạng bắt đầu từ khi nào?'],
+              booking_allowed: false
             }
           });
         }
@@ -53,7 +53,9 @@ const createAIController = ({ db = pool, classify = classifySymptomWithAI } = {}
 
       return res.status(200).json({
         success: true,
-        message: result.recommendation_source === 'AI' ? 'Đã tạo gợi ý bằng AI.' : 'Đang dùng chế độ quy tắc dự phòng.',
+        message: result.predicted_specialty
+          ? 'Đã có thông tin định hướng chuyên khoa.'
+          : 'Chưa đủ thông tin để gợi ý chuyên khoa chắc chắn.',
         data: result
       });
     } catch (error) {

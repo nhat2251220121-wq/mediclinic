@@ -1,4 +1,3 @@
-const DEFAULT_MODEL = 'gpt-5.4-mini';
 const MAX_SYMPTOM_LENGTH = 2000;
 
 const RESPONSE_SCHEMA = {
@@ -21,7 +20,7 @@ const RESPONSE_SCHEMA = {
   ]
 };
 
-const DISCLAIMER = 'Thông tin này chỉ hỗ trợ định hướng nơi khám, không phải chẩn đoán hay đơn thuốc. Nếu triệu chứng nặng lên hoặc thấy nguy hiểm, hãy liên hệ cấp cứu.';
+const DISCLAIMER = 'Trợ lý chỉ định hướng nơi khám, không chẩn đoán hoặc kê đơn.';
 const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/đ/g, 'd');
 
 const findSpecialtyByTerms = (specialties, terms) => specialties.find((specialty) =>
@@ -47,6 +46,19 @@ const isEmergency = (symptoms) => {
   return EMERGENCY_PATTERNS.some((pattern) => pattern.test(text));
 };
 
+const isMedicationRequest = (symptoms) => {
+  const text = normalize(symptoms);
+  return /\b(thuoc nao|uống gi|uong gi|nen uong|lieu thuoc|ke don|ke thuoc|cho xin thuoc|thuoc tri|thuoc ha sot)\b/.test(text)
+    || (text.includes('thuoc') && /\b(het sot|giam sot|chua sot|tri sot)\b/.test(text));
+};
+
+const isVagueSkinConcern = (symptoms) => {
+  const text = normalize(symptoms);
+  return /\b(da mat|da cua toi|mat cua toi)\b/.test(text)
+    && /\b(xau|khong dep|khong on|co van de)\b/.test(text)
+    && !/\b(ngua|mun|noi ban|phat ban|do|sung|dau|rat|bong|kho|loet|mun trung ca)\b/.test(text);
+};
+
 const emergencyResult = () => ({
   predicted_specialty: null,
   specialty_id: null,
@@ -59,8 +71,21 @@ const emergencyResult = () => ({
   disclaimer: DISCLAIMER
 });
 
+const noSpecialtyResult = ({ initialAdvice, questions = [], urgencyText = 'Chưa đủ thông tin để gợi ý chuyên khoa phù hợp.' } = {}) => ({
+  predicted_specialty: null,
+  specialty_id: null,
+  recommendation_source: 'RULE_BASED',
+  urgency_level: 'ROUTINE',
+  urgency_text: urgencyText,
+  initial_advice: initialAdvice || 'Bạn có thể mô tả rõ vị trí, biểu hiện và thời điểm bắt đầu để tôi giúp định hướng phù hợp hơn.',
+  follow_up_questions: questions.slice(0, 3),
+  booking_allowed: false,
+  disclaimer: DISCLAIMER
+});
+
 // Fallback groups and their order are defined by the project SRS/HLD.
 const RULE_GROUPS = [
+  { keys: ['rang', 'nhuc rang', 'rang e buot'], terms: ['rang ham mat', 'nha khoa'] },
   { keys: ['tim', 'nguc', 'kho tho', 'huyet ap', 'hoi hop'], terms: ['tim mach', 'tim'] },
   { keys: ['da', 'ngua', 'di ung', 'man do', 'mun'], terms: ['da lieu', 'da'] },
   { keys: ['tai', 'mui', 'hong', 'xoang', 'so mui'], terms: ['tai mui hong', 'tai mui'] },
@@ -71,25 +96,39 @@ const RULE_GROUPS = [
 
 const classifyByRules = (symptoms, specialties) => {
   const text = normalize(symptoms);
+  if (isMedicationRequest(text)) {
+    return noSpecialtyResult({
+      urgencyText: 'Trợ lý không kê thuốc hoặc liều dùng.',
+      initialAdvice: 'Tôi không thể đề xuất thuốc hạ sốt. Bạn có thể mô tả thêm các triệu chứng để được định hướng nơi khám, hoặc hỏi nhân viên y tế.',
+      questions: ['Bạn đang gặp thêm dấu hiệu nào ngoài sốt?', 'Tình trạng bắt đầu từ khi nào?']
+    });
+  }
+  if (isVagueSkinConcern(text)) {
+    return noSpecialtyResult({
+      urgencyText: 'Mô tả hiện chưa đủ cụ thể để chọn chuyên khoa.',
+      initialAdvice: 'Bạn đang lo về dấu hiệu nào ở da mặt? Mô tả cụ thể hơn sẽ giúp định hướng phù hợp.',
+      questions: ['Bạn thấy biểu hiện gì cụ thể, chẳng hạn ngứa, nổi mụn hay đỏ da?', 'Biểu hiện bắt đầu từ khi nào?']
+    });
+  }
   let selected = null;
   for (const group of RULE_GROUPS) {
     if (!group.keys.some((key) => matchesRuleKeyword(text, key))) continue;
     selected = findSpecialtyByTerms(specialties, group.terms);
     if (selected) break;
   }
-  if (!selected) selected = findSpecialtyByTerms(specialties, ['noi tong quat']);
-
+  if (!selected) {
+    return noSpecialtyResult({
+      initialAdvice: 'Chưa tìm được chuyên khoa phù hợp từ mô tả này. Bạn có thể bổ sung triệu chứng cụ thể hoặc liên hệ nhân viên y tế.',
+      questions: ['Bạn đang gặp biểu hiện gì cụ thể và ở vị trí nào?', 'Tình trạng bắt đầu từ khi nào?']
+    });
+  }
   return {
     predicted_specialty: selected?.name || null,
     specialty_id: selected ? Number(selected.id) : null,
     recommendation_source: 'RULE_BASED',
     urgency_level: 'ROUTINE',
-    urgency_text: selected
-      ? 'Chỉ là gợi ý nơi khám theo từ khóa; nhân viên y tế sẽ đánh giá trực tiếp.'
-      : 'Chưa thể gợi ý chuyên khoa từ danh mục đang hoạt động; bạn có thể tự chọn dịch vụ.',
-    initial_advice: selected
-      ? 'Bạn có thể xem dịch vụ thuộc chuyên khoa được gợi ý và chọn lịch phù hợp.'
-      : 'Hệ thống chưa xác định được chuyên khoa phù hợp. Bạn có thể tự chọn dịch vụ trên trang đặt lịch.',
+    urgency_text: 'Có thể trao đổi với chuyên khoa này; nhân viên y tế sẽ đánh giá trực tiếp.',
+    initial_advice: `Mô tả của bạn có thể phù hợp để được tư vấn tại chuyên khoa ${selected.name}.`,
     follow_up_questions: [],
     booking_allowed: true,
     disclaimer: DISCLAIMER
@@ -124,12 +163,12 @@ const extractResponseText = (body) => {
   return parts.join('');
 };
 
-const requestOpenAI = async ({ symptoms, specialties, fetchImpl = globalThis.fetch, apiKey = process.env.OPENAI_API_KEY, model = process.env.OPENAI_MODEL || DEFAULT_MODEL, timeoutMs = 12000 }) => {
-  if (!apiKey || typeof fetchImpl !== 'function') throw new Error('OPENAI_UNAVAILABLE');
+const requestOpenAI = async ({ symptoms, specialties, fetchImpl = globalThis.fetch, apiKey = process.env.OPENAI_API_KEY, model = process.env.OPENAI_MODEL, baseUrl = process.env.OPENAI_BASE_URL, timeoutMs = 12000 }) => {
+  if (!apiKey || !model || !baseUrl || typeof fetchImpl !== 'function') throw new Error('OPENAI_UNAVAILABLE');
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetchImpl('https://api.openai.com/v1/responses', {
+    const response = await fetchImpl(`${String(baseUrl).replace(/\/+$/, '')}/responses`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       signal: controller.signal,
@@ -138,7 +177,7 @@ const requestOpenAI = async ({ symptoms, specialties, fetchImpl = globalThis.fet
         input: [
           {
             role: 'system',
-            content: 'Bạn chỉ định hướng chuyên khoa và mức độ cần được đánh giá, không chẩn đoán, không nêu bệnh có thể mắc, không kê đơn/đưa hướng dẫn điều trị. Chỉ chọn specialty từ danh sách đang hoạt động được cung cấp; điền đúng ID tương ứng. Không yêu cầu tuổi, giới tính hay thông tin định danh. Nếu thiếu thông tin, đặt tối đa 3 câu hỏi làm rõ, không yêu cầu dữ liệu định danh. Khi không phù hợp danh sách, specialty và ID phải là null. Trả tiếng Việt. EMERGENCY chỉ dùng cho dấu hiệu cấp cứu; ROUTINE hoặc URGENT cho trường hợp khác. booking_allowed phải false khi EMERGENCY, true nếu khác.'
+            content: 'Bạn chỉ hỗ trợ định hướng chuyên khoa dựa trên triệu chứng/lý do khám. Nếu người dùng hỏi việc ngoài phạm vi, lịch khám, lịch trống, hóa đơn hoặc thanh toán, không giả vờ tra cứu; trả specialty và ID là null, hỏi người dùng mô tả triệu chứng hoặc hướng họ đến trang chức năng phù hợp nếu được chỉ dẫn. Không chẩn đoán, không nêu bệnh có thể mắc, không kê đơn hoặc liều thuốc. Chỉ chọn specialty đang hoạt động trong danh sách; điền đúng ID. Không yêu cầu tuổi, giới tính hay thông tin định danh. Nếu thiếu thông tin, đặt tối đa 3 câu hỏi làm rõ. Khi không phù hợp danh sách, specialty và ID phải là null. Trả lời ngắn gọn, lịch sự bằng tiếng Việt. EMERGENCY chỉ dùng cho dấu hiệu cấp cứu; booking_allowed chỉ true khi có chuyên khoa đang hoạt động được xác định và trường hợp không khẩn cấp.'
           },
           {
             role: 'user',
@@ -161,9 +200,23 @@ const requestOpenAI = async ({ symptoms, specialties, fetchImpl = globalThis.fet
 
 const validateAndNormalizeAIResult = (candidate, specialties) => {
   if (!isValidContract(candidate)) return null;
+  if (candidate.urgency_level === 'EMERGENCY') return emergencyResult();
   const name = candidate.predicted_specialty?.trim() || null;
-  if (name === null && candidate.specialty_id !== null) return null;
-  if (name === null) return null;
+  if (name === null) {
+    if (candidate.specialty_id !== null) return null;
+    const questions = candidate.follow_up_questions.map((question) => question.trim()).filter(Boolean).slice(0, 3);
+    return {
+      ...candidate,
+      predicted_specialty: null,
+      specialty_id: null,
+      recommendation_source: 'AI',
+      booking_allowed: false,
+      urgency_text: candidate.urgency_text.slice(0, 300) || 'Chưa đủ thông tin để gợi ý chuyên khoa phù hợp.',
+      initial_advice: candidate.initial_advice.slice(0, 1000) || 'Bạn có thể mô tả rõ hơn để được định hướng phù hợp.',
+      follow_up_questions: questions.length ? questions : ['Bạn đang gặp biểu hiện gì cụ thể và ở vị trí nào?'],
+      disclaimer: DISCLAIMER
+    };
+  }
 
   const active = specialties.find((item) => normalize(item.name) === normalize(name));
   if (!active || !Number.isInteger(Number(active.id)) || candidate.specialty_id !== Number(active.id)) return null;
@@ -172,7 +225,7 @@ const validateAndNormalizeAIResult = (candidate, specialties) => {
     predicted_specialty: active.name,
     specialty_id: Number(active.id),
     recommendation_source: 'AI',
-    booking_allowed: candidate.urgency_level !== 'EMERGENCY',
+    booking_allowed: candidate.booking_allowed,
     urgency_text: candidate.urgency_level === 'EMERGENCY'
       ? emergencyResult().urgency_text
       : candidate.urgency_text.slice(0, 300),
@@ -184,19 +237,31 @@ const validateAndNormalizeAIResult = (candidate, specialties) => {
   };
 };
 
+const getFallbackReason = (error) => {
+  if (error?.name === 'AbortError') return 'timeout';
+  if (error?.message === 'OPENAI_UNAVAILABLE') return 'configuration_missing';
+  if (error instanceof SyntaxError) return 'invalid_json';
+  const status = String(error?.message || '').match(/^OPENAI_HTTP_(\d{3})$/)?.[1];
+  if (status) return `provider_http_${status}`;
+  return 'provider_error';
+};
+
 const createSymptomClassifier = ({ provider = requestOpenAI, logger = console } = {}) => async (symptoms, specialties) => {
   const text = String(symptoms || '').trim();
   if (!text || text.length > MAX_SYMPTOM_LENGTH) throw new Error('INVALID_SYMPTOMS');
   if (isEmergency(text)) return emergencyResult();
+  if (isMedicationRequest(text) || isVagueSkinConcern(text)) return classifyByRules(text, Array.isArray(specialties) ? specialties : []);
   if (!Array.isArray(specialties) || specialties.length === 0) return classifyByRules(text, []);
 
   try {
     const candidate = await provider({ symptoms: text, specialties });
     const normalized = validateAndNormalizeAIResult(candidate, specialties);
-    return normalized || classifyByRules(text, specialties);
+    if (normalized) return normalized;
+    logger.warn?.('[AI] Rule guidance used: invalid_contract.');
+    return classifyByRules(text, specialties);
   } catch (error) {
-    // Do not log symptoms, provider response bodies, credentials, or other patient data.
-    logger.warn?.('[AI] Provider unavailable or response invalid; using rule-based fallback.');
+    // Only log a fixed reason code. Never log the symptom, provider body, credentials, or raw error.
+    logger.warn?.(`[AI] Rule guidance used: ${getFallbackReason(error)}.`);
     return classifyByRules(text, specialties);
   }
 };
@@ -204,13 +269,14 @@ const createSymptomClassifier = ({ provider = requestOpenAI, logger = console } 
 const classifySymptomWithAI = createSymptomClassifier();
 
 module.exports = {
-  DEFAULT_MODEL,
   MAX_SYMPTOM_LENGTH,
   RESPONSE_SCHEMA,
   classifyByRules,
   createSymptomClassifier,
   classifySymptomWithAI,
   isEmergency,
+  isMedicationRequest,
+  isVagueSkinConcern,
   emergencyResult,
   isValidContract,
   requestOpenAI
