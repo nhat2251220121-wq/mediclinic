@@ -44,6 +44,7 @@ const Sidebar = ({ collapsed = false, mobileOpen = false, onClose = () => {} }) 
     { to: '/doctor/examination', icon: Stethoscope, label: 'Khám bệnh & Kê đơn' },
     { to: '/doctor/queue', icon: Users, label: 'Danh sách bệnh nhân' },
     { to: '/doctor/schedule', icon: Clock, label: 'Đăng ký lịch làm việc' },
+    { to: '/doctor/work-calendar', icon: Calendar, label: 'Lịch làm việc' },
   ];
 
   // Menu Patient (Hình 3.13 -> 3.18)
@@ -106,7 +107,7 @@ const Sidebar = ({ collapsed = false, mobileOpen = false, onClose = () => {} }) 
         })}
       </div>
 
-      {!isCollapsed && <div className="p-4 border-t border-slate-800 text-center text-[10px] text-slate-500">
+      {role === 'PATIENT' && !isCollapsed && <div className="p-4 border-t border-slate-800 text-center text-[10px] text-slate-500">
         Đồ án tốt nghiệp &copy; PTIT 2025
       </div>}
     </aside>

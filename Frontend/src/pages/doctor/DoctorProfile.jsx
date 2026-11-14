@@ -34,7 +34,7 @@ const DoctorProfile = () => {
         await axiosClient.post('/doctors/me/avatar', body);
       }
       await Promise.all([load(), refreshProfile()]);
-      setFile(null); setNotice('Đã lưu hồ sơ. Chuyên khoa, phòng và phí khám do quản trị viên quản lý.');
+      setFile(null); setNotice('Đã lưu hồ sơ. Chuyên khoa, phòng và kinh nghiệm do quản trị viên quản lý.');
     } catch (requestError) { setError(requestError.message || 'Không lưu được hồ sơ.'); }
     finally { setSaving(false); }
   };
@@ -65,7 +65,6 @@ const DoctorProfile = () => {
         <label className="space-y-1 text-sm"><span className="text-slate-500">Chuyên khoa · quản trị viên cập nhật</span><input readOnly value={profile.specialty_name || 'Chưa phân công'} className="w-full rounded-lg border bg-slate-50 px-3 py-2" /></label>
         <label className="space-y-1 text-sm"><span className="text-slate-500">Phòng · quản trị viên cập nhật</span><input readOnly value={profile.room_name ? `${profile.room_name}${profile.room_number ? ` (${profile.room_number})` : ''}` : 'Chưa phân công'} className="w-full rounded-lg border bg-slate-50 px-3 py-2" /></label>
         <label className="space-y-1 text-sm"><span className="text-slate-500">Kinh nghiệm</span><input readOnly value={`${profile.experience_years || 0} năm`} className="w-full rounded-lg border bg-slate-50 px-3 py-2" /></label>
-        <label className="space-y-1 text-sm"><span className="text-slate-500">Phí khám · quản trị viên cập nhật</span><input readOnly value={`${Number(profile.consultation_fee || 0).toLocaleString('vi-VN')} ₫`} className="w-full rounded-lg border bg-slate-50 px-3 py-2" /></label>
         <label className="space-y-1 text-sm"><span className="text-slate-500">Điện thoại liên hệ</span><input required type="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} className="w-full rounded-lg border px-3 py-2" /></label>
         <label className="space-y-1 text-sm"><span className="text-slate-500">Email liên hệ</span><input required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} className="w-full rounded-lg border px-3 py-2" /></label>
         <label className="space-y-1 text-sm sm:col-span-2"><span className="text-slate-500">Giới thiệu</span><textarea rows={5} value={form.bio} onChange={(event) => setForm({ ...form, bio: event.target.value })} className="w-full rounded-lg border px-3 py-2" /></label>

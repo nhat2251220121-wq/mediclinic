@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import axiosClient from '../api/axiosClient';
 import ImageWithFallback from '../components/common/ImageWithFallback';
@@ -11,6 +11,7 @@ import ClinicContact from '../components/common/ClinicContact';
 const HomePage = () => {
   const { isAuthenticated, user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [selectedService, setSelectedService] = useState(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -27,6 +28,15 @@ const HomePage = () => {
       .catch(() => setCatalogError('Không tải được danh mục hiện tại. Vui lòng thử tải lại trang.'))
       .finally(() => setCatalogLoading(false));
   }, []);
+
+  useEffect(() => {
+    const requestedId = location.state?.openServiceId;
+    if (!requestedId || !clinicServices.length) return;
+    const service = clinicServices.find((item) => Number(item.id) === Number(requestedId));
+    if (!service) return;
+    setSelectedService(service);
+    navigate('/', { replace: true, state: null });
+  }, [clinicServices, location.state?.openServiceId, navigate]);
 
   useEffect(() => {
     if (!selectedService) {
@@ -49,7 +59,7 @@ const HomePage = () => {
       .catch(() => { if (active) setServiceDoctorsError('Không tải được danh sách bác sĩ của chuyên khoa này.'); })
       .finally(() => { if (active) setServiceDoctorsLoading(false); });
     return () => { active = false; };
-  }, [selectedService?.id, selectedService?.specialty_id]);
+  }, [isAuthenticated, user?.role, selectedService?.id, selectedService?.specialty_id]);
 
   const handleLogout = () => {
     logout();
@@ -193,7 +203,7 @@ const HomePage = () => {
       </section>
 
       {/* Danh mục Dịch vụ của chúng tôi (Hình 3.13) */}
-      <section id="services" className="max-w-7xl mx-auto px-6 py-16 flex-1 w-full space-y-10">
+      <section id="services" className="mx-auto w-full max-w-7xl min-w-0 px-4 py-12 sm:px-6 sm:py-16 flex-1 space-y-10">
         <div className="text-center space-y-2">
           <span className="text-xs font-bold text-sky-600 uppercase tracking-widest">Danh mục khám chữa bệnh</span>
           <h3 className="text-3xl font-black text-slate-800">Dịch vụ của chúng tôi</h3>
@@ -251,7 +261,7 @@ const HomePage = () => {
       {selectedService && (
         <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setSelectedService(null)}></div>
-          <div className="relative bg-white rounded-xl max-w-xl w-full p-6 shadow-xl border border-slate-100 z-10 space-y-6">
+          <div className="relative max-h-[calc(100dvh-2rem)] w-full max-w-xl min-w-0 overflow-y-auto break-words bg-white rounded-xl p-4 sm:p-6 shadow-xl border border-slate-100 z-10 space-y-6">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-lg font-black text-slate-800">Thông tin dịch vụ</h3>
               <button onClick={() => setSelectedService(null)} className="p-1 rounded-lg text-slate-400 hover:text-slate-600">
@@ -273,7 +283,6 @@ const HomePage = () => {
                 </div>
               </div>
 
-              {/* Public doctor directory */}
               <div className="space-y-3 pt-3 border-t border-slate-100">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
                   Bác sĩ đang hoạt động:
@@ -300,10 +309,10 @@ const HomePage = () => {
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+            <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-3 sm:flex-row sm:justify-end sm:gap-3">
               <button
                 onClick={() => setSelectedService(null)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-semibold text-slate-600 transition"
+                className="min-h-11 w-full rounded-xl bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-200 sm:w-auto"
               >
                 Đóng
               </button>
@@ -313,7 +322,7 @@ const HomePage = () => {
                   setSelectedService(null);
                   handleBookingClick(s);
                 }}
-                className="px-5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition shadow-md shadow-sky-600/20"
+                className="min-h-11 w-full rounded-xl bg-sky-600 px-5 py-2.5 text-xs font-bold text-white transition shadow-md shadow-sky-600/20 hover:bg-sky-700 sm:w-auto"
               >
                 Đặt lịch khám dịch vụ này
               </button>

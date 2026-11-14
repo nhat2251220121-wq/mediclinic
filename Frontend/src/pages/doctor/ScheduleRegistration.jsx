@@ -92,7 +92,6 @@ const ScheduleRegistration = () => {
     const saved = [...(savedByDate.get(date) || [])].sort((a, b) => a - b);
     return wanted.length !== saved.length || wanted.some((id, index) => id !== saved[index]);
   });
-
   const changeWeek = (offset) => {
     if (hasChanges && !window.confirm('Bạn có thay đổi chưa lưu trong tuần này. Chuyển tuần và bỏ các thay đổi đó?')) return;
     setMessage('');
@@ -193,7 +192,6 @@ const ScheduleRegistration = () => {
 
       {error && <div role="alert" className="whitespace-pre-line rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>}
       {message && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{message}</div>}
-
       <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2"><Calendar className="h-5 w-5 text-sky-700" /><h2 className="font-semibold text-slate-900">Tuần {currentWeekLabel}</h2></div>

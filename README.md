@@ -17,6 +17,10 @@
 
 ## Chuẩn bị môi trường
 
+### Chạy bằng Docker
+
+Xem [docs/DOCKER.md](docs/DOCKER.md) để build và chạy Frontend/Backend qua Docker Compose, cấu hình MySQL bên ngoài, lưu uploads và kiểm tra/chạy migration có chủ đích. Compose không tự chạy migration.
+
 1. Cài Node.js 20+ và MySQL 8+ (đã build với Node.js 24.14.0 và Vite 6.4.3).
 2. Tạo database mới bằng `Backend/database/schema.sql`. File này chỉ dùng cho database mới và không chứa lệnh DROP hay tài khoản mẫu.
 3. Sao lưu database đang có trước khi nâng cấp. Ví dụ, `mysqldump -u <user> -p mediclinic_db > mediclinic_db-backup.sql`; lệnh sẽ hỏi mật khẩu.

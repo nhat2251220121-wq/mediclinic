@@ -1,16 +1,85 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import axiosClient from '../../api/axiosClient';
-import { ArrowLeft, Plus, Printer, Save, Trash2 } from 'lucide-react';
+import { ArrowLeft, Eye, LoaderCircle, Plus, Printer, Save, Search, Trash2, X } from 'lucide-react';
 
 const blankVitals = { height: '', weight: '', blood_pressure: '', temperature: '', heart_rate: '', spo2: '' };
 const missing = (value) => value === undefined || value === null || value === '' ? 'Chưa ghi nhận' : value;
 const dateLabel = (value) => value ? String(value).slice(0, 10).split('-').reverse().join('/') : 'Chưa ghi nhận';
+const historySortValue = (record) => {
+  const day = String(record.appointment_date || '').slice(0, 10);
+  const start = String(record.time_slot || '').match(/\b(\d{1,2}:\d{2})\b/)?.[1] || '00:00';
+  const timestamp = Date.parse(`${day}T${start}:00+07:00`);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+};
 const mealLabel = (name) => name === 'Trong khi ăn' ? 'Trong bữa ăn' : name || 'Không chỉ định';
 const safeNumber = (value) => value === '' ? null : Number(value);
 
 function Detail({ label, children, className = '' }) {
   return <div className={className}><div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div><div className="mt-1 whitespace-pre-wrap text-sm text-slate-900">{children || 'Chưa ghi nhận'}</div></div>;
+}
+
+function HistoryRecordDetails({ record }) {
+  const vitals = [
+    ['Chiều cao', record.height, 'cm'], ['Cân nặng', record.weight, 'kg'], ['Huyết áp', record.blood_pressure, 'mmHg'],
+    ['Nhiệt độ', record.temperature, '°C'], ['Nhịp tim', record.heart_rate, 'lần/phút'], ['SpO₂', record.spo2, '%']
+  ];
+  const details = [
+    ['Triệu chứng và diễn biến', record.symptoms], ['Chẩn đoán ban đầu', record.initial_diagnosis],
+    ['Chẩn đoán cuối cùng', record.final_diagnosis],
+    ['Mã ICD-10', record.icd10_code ? `${record.icd10_code} · ${record.icd10_description || 'Chưa có tên trong danh mục hiện tại'}` : null],
+    ['Kế hoạch điều trị', record.treatment_plan], ['Lời dặn', record.advice],
+    ['Ngày tái khám', record.follow_up_date ? dateLabel(record.follow_up_date) : null], ['Hướng dẫn tái khám', record.follow_up_notes]
+  ].filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== '');
+
+  return <div className="space-y-5 p-4 sm:p-6">
+    <section className="grid gap-3 rounded-xl bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-4">
+      <Detail label="Ngày giờ khám">{dateLabel(record.appointment_date)} · {record.time_slot || 'Chưa ghi nhận'}</Detail>
+      <Detail label="Dịch vụ / chuyên khoa">{[record.service_name, record.specialty_name].filter(Boolean).join(' · ')}</Detail>
+      <Detail label="Bác sĩ">{record.doctor_name}</Detail>
+      <Detail label="Mã bệnh án">{record.record_id || record.id}</Detail>
+    </section>
+
+    <section>
+      <h3 className="mb-2 text-sm font-semibold text-slate-800">Sinh hiệu</h3>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        {vitals.map(([label, value, unit]) => <div key={label} className="rounded-lg border border-slate-100 p-3">
+          <div className="text-xs text-slate-500">{label}</div>
+          <div className="mt-1 text-sm font-medium text-slate-800">{missing(value)}{value !== null && value !== undefined && value !== '' ? ` ${unit}` : ''}</div>
+        </div>)}
+      </div>
+    </section>
+
+    <section>
+      <h3 className="mb-2 text-sm font-semibold text-slate-800">Nội dung bệnh án</h3>
+      {details.length ? <div className="grid gap-3 sm:grid-cols-2">
+        {details.map(([label, value]) => <div key={label} className="rounded-lg border border-slate-100 p-3">
+          <div className="text-xs font-medium text-slate-500">{label}</div>
+          <div className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-800">{value}</div>
+        </div>)}
+        {details.length < 8 && ['Triệu chứng và diễn biến', 'Chẩn đoán ban đầu', 'Chẩn đoán cuối cùng', 'Kế hoạch điều trị', 'Lời dặn', 'Ngày tái khám'].filter((label) => !details.some(([existing]) => existing === label)).length > 0 && (
+          <p className="text-xs text-slate-500 sm:col-span-2">Một số nội dung chưa được ghi nhận trong lần khám này.</p>
+        )}
+      </div> : <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-500">Chưa ghi nhận nội dung bệnh án.</p>}
+    </section>
+
+    <section>
+      <h3 className="mb-2 text-sm font-semibold text-slate-800">Đơn thuốc</h3>
+      {record.prescriptions?.length ? <div className="overflow-x-auto rounded-xl border border-slate-200">
+        <table className="min-w-[760px] w-full text-left text-sm">
+          <thead className="bg-slate-50 text-xs text-slate-600"><tr><th className="p-3">Thuốc</th><th className="p-3">Số lượng</th><th className="p-3">Liều dùng</th><th className="p-3">Số ngày</th><th className="p-3">Thời điểm / bữa ăn</th><th className="p-3">Hướng dẫn</th></tr></thead>
+          <tbody className="divide-y divide-slate-100">{record.prescriptions.map((item) => <tr key={item.prescription_id} className="align-top">
+            <td className="p-3"><div className="font-medium">{item.medicine_name}</div>{item.medicine_generic_name && <div className="text-xs text-slate-500">{item.medicine_generic_name}</div>}{item.medicine_packing && <div className="text-xs text-slate-500">{item.medicine_packing}</div>}</td>
+            <td className="p-3">{missing(item.quantity)} {item.unit_name || ''}</td>
+            <td className="p-3">{missing(item.dosage)}{item.frequency && <div className="mt-1 text-xs text-slate-500">Tần suất: {item.frequency}</div>}</td>
+            <td className="p-3">{missing(item.duration)}{item.duration ? ' ngày' : ''}</td>
+            <td className="p-3">{item.dosage_times?.length ? item.dosage_times.map((time) => time.name).join(', ') : 'Chưa ghi nhận'}<div className="mt-1 text-xs text-slate-500">{mealLabel(item.meal_name)}</div></td>
+            <td className="p-3">{missing(item.instructions)}</td>
+          </tr>)}</tbody>
+        </table>
+      </div> : <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-500">Không có đơn thuốc.</p>}
+    </section>
+  </div>;
 }
 
 const ExaminationPrescription = () => {
@@ -30,6 +99,39 @@ const ExaminationPrescription = () => {
   const [error, setError] = useState('');
   const [detailError, setDetailError] = useState('');
   const [vitalsAcknowledged, setVitalsAcknowledged] = useState(false);
+  const [allHistoryOpen, setAllHistoryOpen] = useState(false);
+  const [historySearch, setHistorySearch] = useState('');
+  const [selectedHistoryRecord, setSelectedHistoryRecord] = useState(null);
+  const [historyDetailLoading, setHistoryDetailLoading] = useState(false);
+  const [historyDetailError, setHistoryDetailError] = useState('');
+
+  const sortedHistory = useMemo(() => [...history].sort((left, right) => {
+    const dateDifference = historySortValue(right) - historySortValue(left);
+    if (dateDifference) return dateDifference;
+    return Number(right.record_id || right.id || 0) - Number(left.record_id || left.id || 0);
+  }), [history]);
+  const recentHistory = sortedHistory.slice(0, 2);
+  const filteredHistory = useMemo(() => {
+    const term = historySearch.trim().toLocaleLowerCase('vi');
+    if (!term) return sortedHistory;
+    return sortedHistory.filter((record) => [record.appointment_date, record.service_name, record.specialty_name, record.doctor_name, record.final_diagnosis, record.initial_diagnosis]
+      .some((value) => String(value || '').toLocaleLowerCase('vi').includes(term)));
+  }, [sortedHistory, historySearch]);
+
+  const openHistoryRecord = async (summary) => {
+    const recordId = summary.record_id || summary.id;
+    setSelectedHistoryRecord(summary);
+    setHistoryDetailLoading(true);
+    setHistoryDetailError('');
+    try {
+      const response = await axiosClient.get(`/medical-records/${recordId}`);
+      setSelectedHistoryRecord(response.data);
+    } catch (requestError) {
+      setHistoryDetailError(requestError.message || 'Không tải được chi tiết bệnh án.');
+    } finally {
+      setHistoryDetailLoading(false);
+    }
+  };
 
   const loadSavedRecord = async (recordId) => {
     try {
@@ -46,7 +148,7 @@ const ExaminationPrescription = () => {
     axiosClient.get(`/appointments/${appointmentId}`).then(async (appointmentResult) => {
       const activeAppointment = appointmentResult.data;
       const [historyResult, catalogResult] = await Promise.all([
-        axiosClient.get(`/medical-records?patient_id=${activeAppointment.patient_id}`),
+        axiosClient.get(`/medical-records?patient_id=${activeAppointment.patient_id}&appointment_id=${appointmentId}`),
         axiosClient.get('/medical-records/catalog')
       ]);
       setAppointment(activeAppointment);
@@ -163,7 +265,56 @@ const ExaminationPrescription = () => {
       </div>
     </section>
 
-    <section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="mb-3 text-sm font-semibold">Lịch sử khám trước đây · không bao gồm lần khám hiện tại</h2>{history.length ? <div className="space-y-2">{history.map((record) => <div key={record.record_id} className="rounded-lg bg-slate-50 p-3 text-sm"><strong>{dateLabel(record.appointment_date)}</strong> · {record.doctor_name} · {record.service_name || 'Khám'}<p className="mt-1"><strong>Chẩn đoán:</strong> {record.final_diagnosis || 'Chưa ghi nhận'}</p>{record.prescriptions?.length ? <div className="mt-1 text-xs text-slate-600"><strong>Đơn thuốc:</strong> {record.prescriptions.map((drug) => `${drug.medicine_name} · ${drug.quantity} ${drug.unit_name || ''} · ${drug.dosage} · ${drug.duration} ngày`).join('; ')}</div> : <p className="mt-1 text-xs text-slate-500">Không có đơn thuốc.</p>}</div>)}</div> : <p className="text-sm text-slate-500">Chưa có lịch sử khám.</p>}</section>
+    <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div><h2 className="text-sm font-semibold text-slate-900">Lịch sử khám trước đây</h2><p className="mt-1 text-xs text-slate-500">Không bao gồm lần khám hiện tại · Hiển thị tối đa 2 lần gần nhất</p></div>
+        {sortedHistory.length > 2 && <button type="button" onClick={() => { setHistorySearch(''); setAllHistoryOpen(true); }} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-teal-800 hover:bg-teal-50">Xem toàn bộ lịch sử ({sortedHistory.length} lần)</button>}
+      </div>
+      {sortedHistory.length === 0 ? <div className="rounded-xl bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">Chưa có lịch sử khám.</div> : <div className="space-y-2">
+        {recentHistory.map((record) => <div key={record.record_id || record.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-100 px-3 py-3 sm:px-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-slate-800"><span>{dateLabel(record.appointment_date)}</span>{record.time_slot && <span className="text-xs font-normal text-slate-500">{record.time_slot}</span>}<span className="text-slate-300">·</span><span className="truncate">{record.service_name || record.specialty_name || 'Khám'}</span></div>
+            <div className="mt-1 truncate text-xs text-slate-500">{record.doctor_name || 'Chưa ghi nhận bác sĩ'}{record.specialty_name && record.service_name ? ` · ${record.specialty_name}` : ''}</div>
+            <div className="mt-1 truncate text-xs text-slate-600">{record.final_diagnosis || 'Chưa ghi nhận chẩn đoán'}</div>
+          </div>
+          <button type="button" onClick={() => openHistoryRecord(record)} title="Xem chi tiết bệnh án" aria-label={`Xem chi tiết bệnh án ngày ${dateLabel(record.appointment_date)}`} className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-teal-800 hover:bg-teal-50">
+            <Eye className="h-4 w-4" /><span className="sm:hidden">Xem</span><span className="hidden sm:inline">Xem chi tiết</span>
+          </button>
+        </div>)}
+      </div>}
+    </section>
+
+    {allHistoryOpen && <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40" onMouseDown={(event) => { if (event.target === event.currentTarget) setAllHistoryOpen(false); }}>
+      <section role="dialog" aria-modal="true" aria-labelledby="all-history-title" className="flex h-[100dvh] max-h-[100dvh] w-full max-w-2xl flex-col bg-white shadow-2xl">
+        <header className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-6">
+          <div><h2 id="all-history-title" className="text-lg font-semibold text-slate-900">Toàn bộ lịch sử khám</h2><p className="mt-1 text-xs text-slate-500">{sortedHistory.length} lần khám · mới nhất trước</p></div>
+          <button type="button" onClick={() => setAllHistoryOpen(false)} aria-label="Đóng lịch sử khám" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button>
+        </header>
+        <div className="border-b border-slate-100 p-4 sm:px-6">
+          <label className="relative block"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={historySearch} onChange={(event) => setHistorySearch(event.target.value)} placeholder="Tìm ngày, dịch vụ, bác sĩ hoặc chẩn đoán" className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100" /></label>
+        </div>
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-4 sm:p-6">
+          {filteredHistory.length === 0 ? <p className="py-10 text-center text-sm text-slate-500">Không tìm thấy lần khám phù hợp.</p> : filteredHistory.map((record) => <div key={record.record_id || record.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 p-3">
+            <div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold text-slate-800">{dateLabel(record.appointment_date)}{record.time_slot ? ` · ${record.time_slot}` : ''} · {record.service_name || record.specialty_name || 'Khám'}</div><div className="mt-1 truncate text-xs text-slate-500">{record.doctor_name || 'Chưa ghi nhận bác sĩ'}{record.specialty_name && record.service_name ? ` · ${record.specialty_name}` : ''}</div><div className="mt-1 line-clamp-2 text-xs text-slate-600">{record.final_diagnosis || 'Chưa ghi nhận chẩn đoán'}</div></div>
+            <button type="button" onClick={() => openHistoryRecord(record)} title="Xem chi tiết bệnh án" aria-label={`Xem chi tiết bệnh án ngày ${dateLabel(record.appointment_date)}`} className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-200 p-2.5 text-teal-800 hover:bg-teal-50"><Eye className="h-4 w-4" /><span className="sr-only">Xem chi tiết</span></button>
+          </div>)}
+        </div>
+      </section>
+    </div>}
+
+    {selectedHistoryRecord && <div className="fixed inset-0 z-[60] flex justify-end bg-slate-950/50" onMouseDown={(event) => { if (event.target === event.currentTarget) { setSelectedHistoryRecord(null); setHistoryDetailError(''); } }}>
+      <section role="dialog" aria-modal="true" aria-labelledby="history-detail-title" className="flex h-[100dvh] max-h-[100dvh] w-full max-w-3xl flex-col bg-white shadow-2xl">
+        <header className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-6">
+          <div className="min-w-0"><h2 id="history-detail-title" className="truncate text-lg font-semibold text-slate-900">Chi tiết bệnh án</h2><p className="mt-1 text-xs text-slate-500">Chế độ chỉ xem · Hồ sơ #{selectedHistoryRecord.record_id || selectedHistoryRecord.id}</p></div>
+          <button type="button" onClick={() => { setSelectedHistoryRecord(null); setHistoryDetailError(''); }} aria-label="Đóng chi tiết bệnh án" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {historyDetailLoading ? <div className="flex items-center justify-center gap-2 p-10 text-sm text-slate-500"><LoaderCircle className="h-4 w-4 animate-spin" />Đang tải bệnh án…</div>
+            : historyDetailError ? <div role="alert" className="m-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 sm:m-6">{historyDetailError}<button type="button" onClick={() => openHistoryRecord(selectedHistoryRecord)} className="ml-2 font-semibold underline">Thử lại</button></div>
+              : <HistoryRecordDetails record={selectedHistoryRecord} />}
+        </div>
+      </section>
+    </div>}
 
     {savedRecord?.patient_name && <section className="space-y-5 rounded-xl border border-emerald-200 bg-white p-5 text-sm">
       <div><h2 className="text-lg font-semibold text-slate-900">Bệnh án đã lưu</h2><p className="mt-1 text-xs text-slate-500">Chế độ chỉ đọc · lần khám {dateLabel(savedRecord.appointment_date)} · lịch #{savedRecord.appointment_id}</p></div>

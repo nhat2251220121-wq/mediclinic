@@ -24,6 +24,7 @@ import AIChatSymptom from './pages/patient/AIChatSymptom';
 import ExaminationPrescription from './pages/doctor/ExaminationPrescription';
 import PatientQueue from './pages/doctor/PatientQueue';
 import ScheduleRegistration from './pages/doctor/ScheduleRegistration';
+import DoctorWorkCalendar from './pages/doctor/DoctorWorkCalendar';
 import DoctorProfile from './pages/doctor/DoctorProfile';
 
 // Admin Pages (Khớp Hình 3.1 -> 3.7)
@@ -76,6 +77,7 @@ function App() {
               <Route path="examination" element={<ExaminationPrescription />} />
               <Route path="queue" element={<PatientQueue />} />
               <Route path="schedule" element={<ScheduleRegistration />} />
+              <Route path="work-calendar" element={<DoctorWorkCalendar />} />
               <Route path="profile" element={<DoctorProfile />} />
             </Route>
           </Route>

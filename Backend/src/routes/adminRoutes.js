@@ -12,6 +12,7 @@ router.use(isAdmin);
 
 // 1. Thống kê Dashboard
 router.get('/dashboard-stats', adminController.getDashboardStats);
+router.get('/appointment-reminders', adminController.getAppointmentReminders);
 
 // 2. Quản lý Thuốc
 router.get('/medicines', adminController.getMedicines);
@@ -31,6 +32,9 @@ router.get('/meal-relations', adminController.getMealRelations);
 router.post('/meal-relations', adminController.createMealRelation);
 router.put('/meal-relations/:id', adminController.updateMealRelation);
 router.delete('/meal-relations/:id', adminController.deactivateMealRelation);
+router.get('/icd10-codes', adminController.getIcd10Codes);
+router.post('/icd10-codes', adminController.createIcd10Code);
+router.put('/icd10-codes/:code', adminController.updateIcd10Code);
 
 // 3. Quản lý Chuyên Khoa
 router.get('/specialties', adminController.getSpecialties);

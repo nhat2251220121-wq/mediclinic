@@ -1,0 +1,23 @@
+# Environment files and secrets (keep templates only)
+**/.env
+**/.env.*
+!**/.env.example
+
+# Installed dependencies and generated frontend build
+**/node_modules/
+Frontend/dist/
+
+# Runtime uploads, logs, local backups and temporary artifacts
+Backend/uploads/
+*.log
+npm-debug.log*
+*.tmp
+*.temp
+*.bak
+*.backup
+*.dump
+*.sql.gz
+*backup*.sql
+docker-release/
+.audit-frontend-build/
+.tmp-docx-qa/

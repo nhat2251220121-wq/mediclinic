@@ -139,8 +139,21 @@ test('Răng Hàm Mặt chỉ được gợi ý nếu chuyên khoa đang hoạt �
   assert.equal(unavailable.booking_allowed, false);
 });
 
+test('luật dự phòng nhận được chuyên khoa đang hoạt động có tên ngắn là răng', async () => {
+  const actualSpecialty = [{ id: 6, name: 'răng' }];
+  const result = await createSymptomClassifier({
+    provider: async () => { throw new Error('provider unavailable'); },
+    logger: {}
+  })('Tôi bị đau răng ê buốt', actualSpecialty);
+
+  assert.equal(result.recommendation_source, 'RULE_BASED');
+  assert.equal(result.specialty_id, 6);
+  assert.equal(result.predicted_specialty, 'răng');
+  assert.equal(result.booking_allowed, true);
+});
+
 test('assistant routes appointment questions to existing pages without inventing lookup results', async () => {
-  const { getAssistantNavigationIntent, formatSymptomReply, isSymptomBookingAllowed } = await import('../../Frontend/src/utils/symptomAssistant.mjs');
+  const { getAssistantNavigationIntent, formatSymptomReply, formatMatchedServiceReply, isSymptomBookingAllowed } = await import('../../Frontend/src/utils/symptomAssistant.mjs');
   const availability = getAssistantNavigationIntent('Bác sĩ hôm nay có ca khám nào trống?', true);
   assert.equal(availability.kind, 'availability');
   assert.equal(availability.action.link, '/patient/booking');
@@ -157,6 +170,12 @@ test('assistant routes appointment questions to existing pages without inventing
   const reply = formatSymptomReply(emergency);
   assert.doesNotMatch(reply, /EMERGENCY|RULE_BASED|AI|fallback/);
   assert.match(reply, /115/);
+  const matchedServiceReply = formatMatchedServiceReply({
+    predicted_specialty: null,
+    initial_advice: 'Chưa tìm được chuyên khoa phù hợp từ mô tả này.'
+  });
+  assert.match(matchedServiceReply, /dịch vụ sau có thể phù hợp/i);
+  assert.doesNotMatch(matchedServiceReply, /chưa tìm được chuyên khoa/i);
 });
 
 test('lỗi provider, timeout và JSON lỗi đều dùng fallback mà không log triệu chứng', async () => {

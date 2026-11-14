@@ -1,9 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, ChevronRight, Minimize2 } from 'lucide-react';
+import { Send, Bot, ChevronRight, Minimize2, Stethoscope } from 'lucide-react';
 import axiosClient from '../../api/axiosClient';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { formatSymptomReply, getAssistantNavigationIntent, isSymptomBookingAllowed } from '../../utils/symptomAssistant.mjs';
+import { formatSymptomReply, getAssistantNavigationIntent, getPatientChatIntent, isDirectServiceLookupIntent } from '../../utils/symptomAssistant.mjs';
+import { getServiceBookingNavigation, normalizeServiceAdviceResult } from '../../utils/serviceAdvice.mjs';
+import ImageWithFallback from './ImageWithFallback';
 
 const AIChatWidget = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -19,9 +21,49 @@ const AIChatWidget = () => {
   const [loading, setLoading] = useState(false);
   const [retryText, setRetryText] = useState('');
   const [emergencyBlocked, setEmergencyBlocked] = useState(false);
-  const { isAuthenticated } = useAuth();
+  const [viewportMetrics, setViewportMetrics] = useState({ width: 0, height: 0, keyboardInset: 0 });
+  const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const messagesEndRef = useRef(null);
+  const sendInProgressRef = useRef(false);
+  const pendingDoctorScheduleRef = useRef('');
+
+  const requestServiceAdvice = (question, specialtyId = null) => axiosClient.post('/ai/service-advice', {
+    question,
+    ...(specialtyId ? { specialty_id: specialtyId } : {}),
+    include_doctors: isAuthenticated && user?.role === 'PATIENT'
+  });
+
+  const addServiceAdviceMessage = (data, message = 'Dưới đây là thông tin từ danh mục dịch vụ đang hoạt động.') => {
+    const result = normalizeServiceAdviceResult(data, message);
+    setEmergencyBlocked(result.emergency);
+    setMessages((prev) => [...prev, {
+      id: Date.now() + 1,
+      sender: 'ai',
+      text: result.message,
+      services: result.services,
+      doctorsIncluded: result.doctorsIncluded,
+      patientDoctorAccess: isAuthenticated && user?.role === 'PATIENT',
+      serviceBookingAllowed: result.bookingAllowed,
+      noServiceMatch: result.noServiceMatch,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }]);
+  };
+
+  const openServiceDetails = (service) => {
+    if (isAuthenticated && user?.role === 'PATIENT') {
+      navigate('/', { state: { openServiceId: service.service_id } });
+    } else {
+      navigate('/', { state: { openServiceId: service.service_id } });
+    }
+    setIsOpen(false);
+  };
+
+  const bookService = (service) => {
+    const destination = getServiceBookingNavigation(service.service_id, isAuthenticated && user?.role === 'PATIENT');
+    navigate(destination.path, destination.options);
+    setIsOpen(false);
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -33,9 +75,54 @@ const AIChatWidget = () => {
     }
   }, [messages, isOpen]);
 
+  useEffect(() => {
+    const updateViewport = () => {
+      const visualViewport = window.visualViewport;
+      const width = window.innerWidth;
+      const height = visualViewport?.height || window.innerHeight;
+      const obscuredHeight = visualViewport
+        ? Math.max(0, window.innerHeight - (visualViewport.offsetTop + visualViewport.height))
+        : 0;
+      const inputFocused = document.activeElement?.tagName === 'INPUT';
+      setViewportMetrics({
+        width,
+        height,
+        keyboardInset: width < 640 && inputFocused && obscuredHeight > 80 ? obscuredHeight : 0
+      });
+    };
+
+    updateViewport();
+    window.addEventListener('resize', updateViewport);
+    window.addEventListener('focusin', updateViewport);
+    window.addEventListener('focusout', updateViewport);
+    window.visualViewport?.addEventListener('resize', updateViewport);
+    window.visualViewport?.addEventListener('scroll', updateViewport);
+    return () => {
+      window.removeEventListener('resize', updateViewport);
+      window.removeEventListener('focusin', updateViewport);
+      window.removeEventListener('focusout', updateViewport);
+      window.visualViewport?.removeEventListener('resize', updateViewport);
+      window.visualViewport?.removeEventListener('scroll', updateViewport);
+    };
+  }, []);
+
+  useEffect(() => {
+    const closeChat = () => setIsOpen(false);
+    window.addEventListener('mediclinic:close-chat', closeChat);
+    return () => window.removeEventListener('mediclinic:close-chat', closeChat);
+  }, []);
+
+  const openChat = () => {
+    window.dispatchEvent(new Event('mediclinic:close-notifications'));
+    setIsOpen(true);
+  };
+
   const handleSend = async (e) => {
     e.preventDefault();
-    if (!input.trim() || input.length > 2000 || loading) return;
+    // State updates are asynchronous. Use a ref as a synchronous guard so a
+    // rapid Enter/click pair cannot start two requests for the same message.
+    if (sendInProgressRef.current || !input.trim() || input.length > 2000 || loading) return;
+    sendInProgressRef.current = true;
 
     const userText = input.trim();
     const userMsg = {
@@ -49,8 +136,46 @@ const AIChatWidget = () => {
     setInput('');
     setLoading(true);
     setRetryText('');
+    setEmergencyBlocked(false);
 
     try {
+      const detectedPatientQueryIntent = getPatientChatIntent(userText);
+      const isAnsweringScheduleClarification = Boolean(pendingDoctorScheduleRef.current)
+        && (!detectedPatientQueryIntent || detectedPatientQueryIntent === 'DOCTOR_SCHEDULE');
+      if (pendingDoctorScheduleRef.current && detectedPatientQueryIntent && detectedPatientQueryIntent !== 'DOCTOR_SCHEDULE') {
+        pendingDoctorScheduleRef.current = '';
+      }
+      const patientQueryIntent = isAnsweringScheduleClarification ? 'DOCTOR_SCHEDULE' : detectedPatientQueryIntent;
+      const patientQueryQuestion = isAnsweringScheduleClarification
+        ? `${pendingDoctorScheduleRef.current} ${userText}`.trim()
+        : userText;
+      if (patientQueryIntent) {
+        if (!isAuthenticated || user?.role !== 'PATIENT') {
+          setMessages((prev) => [...prev, {
+            id: Date.now() + 1,
+            sender: 'ai',
+            text: !isAuthenticated
+              ? 'Để tra cứu thông tin bác sĩ, lịch làm, lịch khám hoặc bệnh án, bạn cần đăng nhập bằng tài khoản bệnh nhân trước.'
+              : 'Chức năng tra cứu này chỉ dành cho tài khoản bệnh nhân.',
+            ...(!isAuthenticated ? { action: { text: 'Đăng nhập', link: '/login' } } : {}),
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          }]);
+          return;
+        }
+        const response = await axiosClient.post('/ai/patient-query', { question: patientQueryQuestion });
+        if (patientQueryIntent === 'DOCTOR_SCHEDULE') {
+          pendingDoctorScheduleRef.current = response?.data?.needs_follow_up ? patientQueryQuestion : '';
+        }
+        setMessages((prev) => [...prev, {
+          id: Date.now() + 1,
+          sender: 'ai',
+          text: response?.data?.message || 'Chưa có kết quả tra cứu.',
+          ...(response?.data?.doctor ? { doctor: response.data.doctor } : {}),
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }]);
+        return;
+      }
+
       const navigationIntent = getAssistantNavigationIntent(userText, isAuthenticated);
       if (navigationIntent) {
         setMessages((prev) => [...prev, {
@@ -63,38 +188,37 @@ const AIChatWidget = () => {
         return;
       }
 
-      // Stateless classification: the symptom text is not persisted as chat history.
-      const res = await axiosClient.post('/ai/classify-symptom', { symptoms: userText });
-      if (res.success && res.data) {
-        const d = res.data;
-        setEmergencyBlocked(d.urgency_level === 'EMERGENCY');
-        const reply = formatSymptomReply(d);
-
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: Date.now() + 1,
-            sender: 'ai',
-            text: reply,
-            ...(isSymptomBookingAllowed(d) ? { action: {
-              text: d.predicted_specialty ? `Tiếp tục đặt lịch · ${d.predicted_specialty}` : 'Tự chọn dịch vụ đặt lịch',
-              link: '/patient/booking',
-              state: { suggestedSpecialty: d.predicted_specialty || '', suggestedSpecialtyId: d.specialty_id || null }
-            } } : {}),
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          }
-        ]);
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: Date.now() + 1,
-            sender: 'ai',
-            text: 'Hiện chưa có gợi ý phù hợp từ danh mục. Bạn có thể xem bác sĩ và lịch còn trống trên trang đặt lịch.',
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          }
-        ]);
+      if (isDirectServiceLookupIntent(userText)) {
+        const serviceResponse = await requestServiceAdvice(userText);
+        addServiceAdviceMessage(serviceResponse.data, serviceResponse.message);
+        return;
       }
+
+      // Classification is an emergency check and optional specialty hint only.
+      // The verified service-advice response is the sole source for service text,
+      // card data and booking eligibility.
+      let classification = null;
+      try {
+        const classificationResponse = await axiosClient.post('/ai/classify-symptom', { symptoms: userText });
+        classification = classificationResponse?.data || null;
+      } catch {
+        // Service lookup still runs; that endpoint repeats emergency checks and
+        // can safely continue without a specialty hint.
+      }
+
+      if (classification?.urgency_level === 'EMERGENCY') {
+        setEmergencyBlocked(true);
+        setMessages((prev) => [...prev, {
+          id: Date.now() + 1,
+          sender: 'ai',
+          text: formatSymptomReply(classification),
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }]);
+        return;
+      }
+
+      const serviceResponse = await requestServiceAdvice(userText, classification?.specialty_id || null);
+      addServiceAdviceMessage(serviceResponse.data, serviceResponse.message);
     } catch (err) {
       setRetryText(userText);
       setMessages((prev) => [
@@ -107,6 +231,7 @@ const AIChatWidget = () => {
         }
       ]);
     } finally {
+      sendInProgressRef.current = false;
       setLoading(false);
     }
   };
@@ -116,13 +241,19 @@ const AIChatWidget = () => {
   };
 
   return (
-    <div className="fixed bottom-3 right-3 z-50 sm:bottom-6 sm:right-6">
+    <div
+      className="fixed bottom-3 right-3 z-50 sm:bottom-6 sm:right-6"
+      style={isOpen && viewportMetrics.width < 640 && viewportMetrics.width > 0 ? {
+        right: '12px',
+        bottom: `calc(12px + env(safe-area-inset-bottom) + ${viewportMetrics.keyboardInset}px)`
+      } : undefined}
+    >
       {/* Nút bấm mở Chatbot nổi - Icon tròn với tooltip */}
       {!isOpen && (
         <div className="relative group">
           <button
-            onClick={() => setIsOpen(true)}
-            className="w-14 h-14 bg-sky-700 hover:bg-sky-800 text-white rounded-full shadow-xl transition-colors flex items-center justify-center"
+            onClick={openChat}
+            className="h-[52px] w-[52px] bg-sky-700 hover:bg-sky-800 text-white rounded-full shadow-xl transition-colors flex items-center justify-center sm:h-14 sm:w-14"
             aria-label="Trợ lý định hướng triệu chứng"
           >
             <div className="relative">
@@ -140,9 +271,15 @@ const AIChatWidget = () => {
 
       {/* Cửa sổ Chatbot y hệt Hình 3.40 (Trang 101-104) */}
       {isOpen && (
-        <div className="w-[min(25rem,calc(100vw-1.5rem))] h-[min(36rem,calc(100dvh-5rem))] min-h-80 max-h-[calc(100dvh-1.5rem)] min-w-0 bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-fadeIn">
+        <div
+          className="h-[65dvh] max-h-[65dvh] w-[calc(100vw-24px)] max-w-[30rem] min-w-0 bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-fadeIn sm:w-[min(30rem,calc(100vw-1.5rem))] sm:h-[min(40rem,calc(100dvh-1.5rem))] sm:max-h-[calc(100dvh-1.5rem)]"
+          style={viewportMetrics.width > 0 && viewportMetrics.width < 640 ? {
+            height: `min(65dvh, calc(${viewportMetrics.height}px - 24px))`,
+            maxHeight: `min(65dvh, calc(${viewportMetrics.height}px - 24px))`
+          } : undefined}
+        >
           {/* Header */}
-          <div className="bg-sky-700 text-white p-4 flex items-center justify-between shadow-sm">
+          <div className="shrink-0 bg-sky-700 text-white p-3 sm:p-4 flex items-center justify-between shadow-sm">
             <div className="flex min-w-0 items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20">
                 <Bot className="w-6 h-6 text-white" />
@@ -156,14 +293,17 @@ const AIChatWidget = () => {
             </div>
             <button
               onClick={() => setIsOpen(false)}
-              className="text-white/80 hover:text-white p-1.5 hover:bg-white/10 rounded-xl transition"
+              type="button"
+              aria-label="Thu nhỏ trợ lý chat"
+              title="Thu nhỏ"
+              className="flex h-11 w-11 shrink-0 items-center justify-center text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition"
             >
               <Minimize2 className="w-5 h-5" />
             </button>
           </div>
 
           {/* Gợi ý câu hỏi nhanh */}
-          {!emergencyBlocked && <div className="bg-slate-50 px-3 py-2 border-b border-slate-100 flex gap-2 overflow-x-auto text-xs no-scrollbar">
+          {!emergencyBlocked && <div className="shrink-0 bg-slate-50 px-3 py-2 border-b border-slate-100 flex gap-2 overflow-x-auto text-xs no-scrollbar">
             <button
               onClick={() => handleQuickQuestion('Tôi bị đau răng ê buốt, nên khám gì?')}
               className="px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-slate-600 hover:text-sky-600 hover:border-sky-300 whitespace-nowrap transition"
@@ -197,7 +337,7 @@ const AIChatWidget = () => {
                   </div>
                 )}
 
-                <div className="max-w-[82%] min-w-0 space-y-2">
+                <div className={`${msg.sender === 'user' ? 'w-fit max-w-[82%]' : 'w-[calc(100%-2.5rem)]'} min-w-0 space-y-2`}>
                   <div
                     className={`break-words p-3.5 rounded-2xl shadow-sm text-xs leading-relaxed whitespace-pre-line ${
                       msg.sender === 'user'
@@ -207,6 +347,55 @@ const AIChatWidget = () => {
                   >
                     {msg.text}
                   </div>
+
+                  {msg.doctor && <article className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white p-3 text-xs shadow-sm">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <ImageWithFallback src={msg.doctor.avatar_url} alt={msg.doctor.full_name} className="h-16 w-16 shrink-0 rounded-xl object-cover" fallback={<Stethoscope className="h-6 w-6" />} />
+                      <div className="min-w-0 space-y-1 text-slate-600">
+                        <h4 className="break-words font-bold text-slate-900">{msg.doctor.full_name}</h4>
+                        <p>Chuyên khoa: {msg.doctor.specialty_name || 'Chưa cập nhật'}</p>
+                        <p>Phòng khám: {msg.doctor.room_name || (msg.doctor.room_number ? `Phòng ${msg.doctor.room_number}` : 'Chưa cập nhật')}</p>
+                        <p>Kinh nghiệm: {Number(msg.doctor.experience_years || 0)} năm</p>
+                        {msg.doctor.phone && <p>Số điện thoại: <a className="text-teal-800 underline" href={`tel:${msg.doctor.phone}`}>{msg.doctor.phone}</a></p>}
+                        {msg.doctor.email && <p>Email: <a className="break-all text-teal-800 underline" href={`mailto:${msg.doctor.email}`}>{msg.doctor.email}</a></p>}
+                      </div>
+                    </div>
+                    {msg.doctor.bio && <p className="mt-2 break-words leading-relaxed text-slate-600">{msg.doctor.bio}</p>}
+                  </article>}
+
+                  {msg.services?.length > 0 && <div className="space-y-2">
+                    {msg.services.map((service) => (
+                      <article key={service.service_id} className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white p-3 text-xs shadow-sm">
+                        <div className="flex min-w-0 gap-2.5">
+                          <ImageWithFallback src={service.image_url} alt={service.name} className="h-16 w-20 shrink-0 rounded-lg object-cover" fallback={<Stethoscope className="h-6 w-6" />} />
+                          <div className="min-w-0 flex-1">
+                            <h4 className="break-words font-bold text-slate-900">{service.name}</h4>
+                            <p className="mt-0.5 break-words text-teal-800">{service.specialty?.name || 'Chuyên khoa chưa cập nhật'}</p>
+                            <p className="mt-1.5 line-clamp-3 break-words leading-relaxed text-slate-600">{service.description || 'Mô tả chưa được cập nhật.'}</p>
+                          </div>
+                        </div>
+                        <p className="mt-2 font-bold text-slate-900">{service.price_available
+                          ? `${Number(service.price).toLocaleString('vi-VN')} ₫`
+                          : 'Giá chưa được cập nhật'}</p>
+
+                        {msg.patientDoctorAccess && msg.doctorsIncluded && <div className="mt-2 border-t border-slate-100 pt-2">
+                          <p className="font-semibold text-slate-700">Bác sĩ thuộc chuyên khoa phụ trách dịch vụ</p>
+                          {service.doctors?.length
+                            ? <ul className="mt-1 space-y-2 text-slate-600">{service.doctors.slice(0, 4).map((doctor) => <li key={doctor.id} className="break-words">{doctor.full_name}{doctor.room_name ? ` · ${doctor.room_name}` : ''}{doctor.phone && <div>SĐT: <a className="text-teal-800 underline" href={`tel:${doctor.phone}`}>{doctor.phone}</a></div>}{doctor.email && <div>Email: <a className="break-all text-teal-800 underline" href={`mailto:${doctor.email}`}>{doctor.email}</a></div>}</li>)}</ul>
+                            : <p className="mt-1 text-slate-500">Chưa có bác sĩ đang hoạt động thuộc chuyên khoa này.</p>}
+                          {service.doctor_contact_public === false && <p className="mt-1 text-slate-500">Hồ sơ bác sĩ chưa có số điện thoại hoặc email. Vui lòng liên hệ quầy/phòng khám.</p>}
+                        </div>}
+                        {!msg.patientDoctorAccess && <p className="mt-2 border-t border-slate-100 pt-2 text-slate-500">Đăng nhập bằng tài khoản bệnh nhân để xem bác sĩ liên quan; thông tin liên hệ chỉ hiển thị khi được phòng khám công khai.</p>}
+
+                        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          <button type="button" onClick={() => openServiceDetails(service)} className="min-h-9 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 font-semibold text-slate-700 hover:bg-slate-100">Xem chi tiết dịch vụ</button>
+                          {!emergencyBlocked && msg.serviceBookingAllowed && <button type="button" onClick={() => bookService(service)} className="min-h-9 rounded-lg bg-teal-800 px-2 py-1.5 font-semibold text-white hover:bg-teal-900">Đặt lịch</button>}
+                        </div>
+                      </article>
+                    ))}
+                  </div>}
+
+                  {msg.noServiceMatch && !emergencyBlocked && <button type="button" onClick={() => { navigate('/#services'); setIsOpen(false); }} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold text-teal-800">Xem danh mục dịch vụ</button>}
 
                   {/* Nút hành động nếu AI đề xuất */}
                   {msg.action && !emergencyBlocked && (
@@ -241,7 +430,7 @@ const AIChatWidget = () => {
           </div>
 
           {/* Input Footer */}
-          <form onSubmit={handleSend} className="p-3 bg-white border-t border-slate-100 flex items-center gap-2">
+          <form onSubmit={handleSend} className="shrink-0 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] bg-white border-t border-slate-100 flex items-center gap-2">
             <input
               type="text"
               maxLength={2000}

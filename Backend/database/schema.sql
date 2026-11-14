@@ -91,6 +91,7 @@ CREATE TABLE `services` (
     `name` VARCHAR(150) NOT NULL,
     `price` DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
     `description` TEXT NULL,
+    `search_keywords` TEXT NULL,
     `image_url` VARCHAR(255) NULL,
     `specialty_id` INT NULL,
     `is_active` BOOLEAN NOT NULL DEFAULT TRUE,
@@ -170,9 +171,13 @@ CREATE TABLE `appointments` (
     `service_id` INT NULL,
     `shift_employee_id` INT NULL,
     `slot_id` INT NULL,
+    `follow_up_id` INT NULL,
     `appointment_date` DATE NOT NULL,
     `time_slot` VARCHAR(50) NOT NULL,
     `status` ENUM('PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED', 'NO_SHOW') NOT NULL DEFAULT 'PENDING',
+    `active_follow_up_id` INT GENERATED ALWAYS AS (
+        CASE WHEN `follow_up_id` IS NOT NULL AND `status` IN ('PENDING', 'CONFIRMED') THEN `follow_up_id` ELSE NULL END
+    ) STORED,
     `initial_symptoms` TEXT NULL,
     `ai_predicted_specialty` VARCHAR(100) NULL,
     `full_name` VARCHAR(150) NULL,
@@ -186,6 +191,8 @@ CREATE TABLE `appointments` (
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX `idx_appointments_doctor_slot` (`doctor_id`, `appointment_date`, `time_slot`, `status`),
     INDEX `idx_appointments_patient_date` (`patient_id`, `appointment_date`, `status`),
+    INDEX `idx_appointments_follow_up_id` (`follow_up_id`),
+    UNIQUE KEY `uq_appointments_active_follow_up_id` (`active_follow_up_id`),
     UNIQUE KEY `uq_appointments_slot_id` (`slot_id`),
     CONSTRAINT `fk_app_patient` FOREIGN KEY (`patient_id`) REFERENCES `users`(`id`) ON DELETE RESTRICT,
     CONSTRAINT `fk_app_doctor` FOREIGN KEY (`doctor_id`) REFERENCES `doctors`(`id`) ON DELETE RESTRICT,
@@ -327,6 +334,9 @@ CREATE TABLE `follow_up_visits` (
     CONSTRAINT `fk_followup_record` FOREIGN KEY (`record_id`) REFERENCES `appointment_records`(`record_id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+ALTER TABLE `appointments`
+    ADD CONSTRAINT `fk_appointments_follow_up` FOREIGN KEY (`follow_up_id`) REFERENCES `follow_up_visits`(`follow_up_id`) ON DELETE RESTRICT;
+
 -- ----------------------------------------------------------------------------
 -- 12. BẢNG HÓA ĐƠN VIỆN PHÍ (invoices)
 -- ----------------------------------------------------------------------------
@@ -340,6 +350,7 @@ CREATE TABLE `invoices` (
     `payment_status` ENUM('UNPAID', 'PAID') NOT NULL DEFAULT 'UNPAID',
     `invoice_status` ENUM('ACTIVE', 'VOID') NOT NULL DEFAULT 'ACTIVE',
     `payment_method` ENUM('CASH', 'BANK_TRANSFER') DEFAULT 'CASH',
+    `medicine_payment_method` ENUM('CASH', 'BANK_TRANSFER') NULL DEFAULT NULL,
     `cash_requested_at` DATETIME NULL,
     `paid_at` DATETIME NULL,
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,

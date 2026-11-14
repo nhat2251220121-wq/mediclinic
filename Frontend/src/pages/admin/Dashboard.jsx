@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import axiosClient from '../../api/axiosClient';
-import { Activity, CalendarDays, RefreshCw, RotateCcw, Building2 } from 'lucide-react';
+import { Activity, Bell, CalendarDays, RefreshCw, RotateCcw, Building2, ArrowRight } from 'lucide-react';
+import { useAdminAppointmentReminders } from '../../hooks/useAdminAppointmentReminders';
+import AppointmentReminderItem from '../../components/common/AppointmentReminderItem';
 
 const clinicDate = (date) => {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -137,6 +140,7 @@ const Dashboard = () => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState('');
+  const { reminders, loading: remindersLoading, error: remindersError, refresh: refreshReminders } = useAdminAppointmentReminders();
 
   useEffect(() => {
     let active = true;
@@ -216,7 +220,7 @@ const Dashboard = () => {
       <StatCard label="Chuyên khoa đang hoạt động" value={loading ? '…' : apiError ? '—' : Number(stats?.activeSpecialties || 0).toLocaleString('vi-VN')} detail="Theo danh mục chuyên khoa hiện tại" icon={Building2} color="border-pink-200 bg-pink-50 text-pink-700" />
     </div>
 
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(300px,1fr)]">
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(300px,1.7fr)_minmax(240px,1fr)_minmax(280px,1.15fr)]">
       <article className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <header className="border-b border-slate-100 px-5 py-4"><h2 className="text-sm font-semibold text-slate-800">Số ca khám theo ngày</h2><p className="mt-1 text-xs text-slate-500">Khoảng {shortDate(appliedRange.startDate, true)} – {shortDate(appliedRange.endDate, true)}</p></header>
         <div className="p-4 sm:p-5">{loading ? <div className="grid h-72 place-items-center text-sm text-slate-500">Đang tải biểu đồ…</div> : !apiError && <BarChart data={dailyData} includeYear={spansYears} />}</div>
@@ -224,6 +228,21 @@ const Dashboard = () => {
       <article className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <header className="border-b border-slate-100 px-5 py-4"><h2 className="text-sm font-semibold text-slate-800">Phân bổ ca khám theo chuyên khoa</h2><p className="mt-1 text-xs text-slate-500">Theo chuyên khoa của bác sĩ được phân công</p></header>
         <div className="p-4 sm:p-5">{loading ? <div className="grid h-72 place-items-center text-sm text-slate-500">Đang tải biểu đồ…</div> : !apiError && <PieChart data={stats?.specialtyStats || []} />}</div>
+      </article>
+      <article className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <header className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-4">
+          <div className="flex min-w-0 items-center gap-2"><Bell className="h-4 w-4 shrink-0 text-teal-700" /><div className="min-w-0"><h2 className="truncate text-sm font-semibold text-slate-800">Nhắc kiểm tra lịch hẹn</h2><p className="mt-1 text-xs text-slate-500">Lịch hôm nay cần tiếp đón</p></div></div>
+          <span aria-label={`${reminders.total} lịch cần kiểm tra`} className="shrink-0 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-bold tabular-nums text-rose-700">{reminders.total}</span>
+        </header>
+        <div className="min-h-[18rem] flex-1 space-y-2 overflow-y-auto p-3">
+          {remindersLoading && reminders.items.length === 0 ? <div className="grid h-56 place-items-center text-sm text-slate-500">Đang tải lịch hẹn…</div>
+            : remindersError ? <div role="alert" className="rounded-lg border border-rose-100 bg-rose-50 p-3 text-sm text-rose-800">{remindersError}<button type="button" onClick={refreshReminders} className="ml-1 font-semibold underline">Thử lại</button></div>
+              : reminders.items.length === 0 ? <div className="grid h-56 place-items-center px-3 text-center text-sm text-slate-500">Hiện không có lịch hẹn nào cần kiểm tra.</div>
+                : reminders.items.map((item) => <AppointmentReminderItem key={item.appointment_id} item={item} compact />)}
+        </div>
+        <Link to={reminders.clinic_date ? `/admin/appointments?startDate=${reminders.clinic_date}&endDate=${reminders.clinic_date}` : '/admin/appointments'} className="inline-flex shrink-0 items-center justify-center gap-2 border-t border-slate-100 px-4 py-3 text-sm font-semibold text-teal-800 hover:bg-teal-50">
+          Xem tất cả lịch hẹn hôm nay <ArrowRight className="h-4 w-4" />
+        </Link>
       </article>
     </div>
   </section>;

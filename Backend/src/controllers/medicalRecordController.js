@@ -1,5 +1,6 @@
 const { pool } = require('../config/db');
 const { syncInvoiceNotification, createMedicalRecordNotification, emitNotificationsUpdated } = require('../utils/invoiceNotifications');
+const { decorateFollowUp } = require('../utils/followUps');
 
 const clinicTodayISO = () => new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit'
@@ -59,7 +60,7 @@ const createMedicalRecord = async (req, res, next) => {
       if (Number.isNaN(followUp.getTime()) || followUp.toISOString().slice(0, 10) !== follow_up_date || follow_up_date <= todayVietnam) {
         throw new Error('Ngày tái khám phải là ngày hợp lệ trong tương lai.');
       }
-      await connection.query(
+      const [followUpResult] = await connection.query(
         'INSERT INTO follow_up_visits (record_id, follow_up_date, instruction) VALUES (?, ?, ?)',
         [recordId, follow_up_date, follow_up_notes || null]
       );
@@ -73,6 +74,7 @@ const createMedicalRecord = async (req, res, next) => {
         [appointment.patient_id, message, appointment.appointment_id, `FOLLOW_UP:${recordId}`]
       );
       followUpNotificationCreated = true;
+      req.followUpIdCreated = Number(followUpResult.insertId);
     }
 
     const medicineLines = [];
@@ -186,7 +188,7 @@ const createMedicalRecord = async (req, res, next) => {
     const dueAfterSave = Math.max(0, total - Number(paidRow.paid_amount));
     req.app.get('io')?.to(`user:${appointment.patient_id}`).emit('payment_updated', { appointmentId: Number(appointment.appointment_id), status: dueAfterSave <= 0 ? 'PAID' : 'UNPAID', totalAmount: total, paidAmount: Number(paidRow.paid_amount), amountDue: dueAfterSave });
     req.app.get('io')?.to('role:ADMIN').emit('payment_updated', { appointmentId: Number(appointment.appointment_id), status: dueAfterSave <= 0 ? 'PAID' : 'UNPAID', totalAmount: total, paidAmount: Number(paidRow.paid_amount), amountDue: dueAfterSave });
-    return res.status(201).json({ success: true, message: 'Đã lưu bệnh án và hoàn tất khám.', data: { record_id: recordId, invoice_id: invoiceId, total_amount: total } });
+    return res.status(201).json({ success: true, message: 'Đã lưu bệnh án và hoàn tất khám.', data: { record_id: recordId, invoice_id: invoiceId, total_amount: total, follow_up_id: req.followUpIdCreated || null } });
   } catch (error) {
     await connection.rollback();
     if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ success: false, message: 'Bệnh án cho lịch hẹn này đã được lưu.' });
@@ -213,9 +215,21 @@ const getPatientRecords = async (req, res, next) => {
     const params = [];
     if (role === 'PATIENT') { query += ' WHERE mr.patient_id = ?'; params.push(userId); }
     else if (role === 'DOCTOR' && req.query.patient_id) {
+      const patientId = Number(req.query.patient_id);
+      const appointmentId = req.query.appointment_id === undefined ? null : Number(req.query.appointment_id);
+      if (!Number.isSafeInteger(patientId) || patientId < 1 || (appointmentId !== null && (!Number.isSafeInteger(appointmentId) || appointmentId < 1))) {
+        return res.status(400).json({ success: false, message: 'Mã bệnh nhân hoặc lịch hẹn không hợp lệ.' });
+      }
       query += ` WHERE mr.patient_id = ? AND EXISTS (SELECT 1 FROM appointments assigned_app JOIN doctors assigned_doc ON assigned_doc.id = assigned_app.doctor_id
-        WHERE assigned_app.patient_id = mr.patient_id AND assigned_app.status IN ('CONFIRMED','COMPLETED') AND assigned_doc.user_id = ?)`;
-      params.push(req.query.patient_id, userId);
+        WHERE assigned_app.patient_id = mr.patient_id AND assigned_doc.user_id = ?`;
+      params.push(patientId, userId);
+      if (appointmentId !== null) {
+        query += " AND assigned_app.appointment_id = ? AND assigned_app.status IN ('PENDING','CONFIRMED','COMPLETED')";
+        params.push(appointmentId);
+      } else {
+        query += " AND assigned_app.status IN ('CONFIRMED','COMPLETED')";
+      }
+      query += ')';
     }
     else if (role === 'DOCTOR') { query += ' WHERE d.user_id = ?'; params.push(userId); }
     query += ' ORDER BY mr.created_at DESC';
@@ -288,27 +302,91 @@ const getMyFollowUps = async (req, res, next) => {
     }
     const params = [req.user.id];
     let dateFilter = '';
-    if (date) { dateFilter = ' AND fv.follow_up_date = ?'; params.push(date); }
+    if (date) {
+      dateFilter = ` AND (fv.follow_up_date = ? OR EXISTS (
+        SELECT 1 FROM appointments related_app WHERE related_app.follow_up_id = fv.follow_up_id AND related_app.appointment_date = ?
+      ))`;
+      params.push(date, date);
+    }
     const [rows] = await pool.query(
       `SELECT fv.follow_up_id, mr.record_id, mr.patient_id, mr.appointment_id AS source_appointment_id,
-       DATE_FORMAT(fv.follow_up_date, '%Y-%m-%d') AS follow_up_date,
+       DATE_FORMAT(fv.follow_up_date, '%Y-%m-%d') AS follow_up_date, fv.instruction,
        p.full_name AS patient_name, p.phone AS patient_phone, svc.name AS service_name,
-       next_app.appointment_id AS follow_up_appointment_id, next_app.time_slot AS follow_up_time_slot,
-       next_app.status AS follow_up_appointment_status
+       active_app.appointment_id AS active_appointment_id,
+       DATE_FORMAT(active_app.appointment_date, '%Y-%m-%d') AS active_appointment_date,
+       active_app.time_slot AS active_time_slot, active_app.status AS active_appointment_status,
+       completed_app.appointment_id AS completed_appointment_id,
+       EXISTS(SELECT 1 FROM appointment_records completed_record WHERE completed_record.appointment_id = completed_app.appointment_id) AS completed_has_record,
+       latest_app.appointment_id AS latest_appointment_id, latest_app.status AS latest_appointment_status,
+       DATE_FORMAT(latest_app.appointment_date, '%Y-%m-%d') AS latest_appointment_date, latest_app.time_slot AS latest_time_slot,
+       chosen_doc_user.full_name AS follow_up_doctor_name,
+       latest_app.appointment_id AS follow_up_appointment_id, latest_app.time_slot AS follow_up_time_slot,
+       latest_app.status AS follow_up_appointment_status
        FROM follow_up_visits fv JOIN appointment_records mr ON mr.record_id = fv.record_id
        JOIN doctors d ON d.id = mr.doctor_id JOIN users p ON p.id = mr.patient_id
        LEFT JOIN appointments source_app ON source_app.appointment_id = mr.appointment_id
        LEFT JOIN services svc ON svc.id = source_app.service_id
-       LEFT JOIN appointments next_app ON next_app.appointment_id = (
-         SELECT a2.appointment_id FROM appointments a2
-         WHERE a2.patient_id = mr.patient_id AND a2.doctor_id = mr.doctor_id
-           AND a2.appointment_date = fv.follow_up_date AND a2.status <> 'CANCELLED'
-         ORDER BY a2.time_slot, a2.appointment_id LIMIT 1
+       LEFT JOIN appointments active_app ON active_app.appointment_id = (
+         SELECT a2.appointment_id FROM appointments a2 WHERE a2.follow_up_id = fv.follow_up_id
+           AND a2.status IN ('PENDING','CONFIRMED') ORDER BY a2.appointment_id DESC LIMIT 1
        )
+       LEFT JOIN appointments completed_app ON completed_app.appointment_id = (
+         SELECT a2.appointment_id FROM appointments a2 WHERE a2.follow_up_id = fv.follow_up_id
+           AND a2.status = 'COMPLETED' ORDER BY a2.appointment_id DESC LIMIT 1
+       )
+       LEFT JOIN appointments latest_app ON latest_app.appointment_id = (
+         SELECT a2.appointment_id FROM appointments a2 WHERE a2.follow_up_id = fv.follow_up_id
+           ORDER BY CASE WHEN a2.status IN ('PENDING','CONFIRMED') THEN 0 ELSE 1 END, a2.appointment_id DESC LIMIT 1
+       )
+       LEFT JOIN doctors chosen_doc ON chosen_doc.id = latest_app.doctor_id
+       LEFT JOIN users chosen_doc_user ON chosen_doc_user.id = chosen_doc.user_id
        WHERE d.user_id = ?${dateFilter}
        ORDER BY fv.follow_up_date, p.full_name`, params
     );
-    return res.json({ success: true, data: rows });
+    return res.json({ success: true, data: rows.map(decorateFollowUp) });
+  } catch (error) { return next(error); }
+};
+
+const getMyPatientFollowUps = async (req, res, next) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT fv.follow_up_id, fv.record_id, mr.patient_id, mr.appointment_id AS source_appointment_id,
+       DATE_FORMAT(fv.follow_up_date, '%Y-%m-%d') AS follow_up_date, fv.instruction,
+       source_app.doctor_id AS source_doctor_id, source_user.full_name AS source_doctor_name,
+       source_app.service_id AS source_service_id, source_service.name AS source_service_name,
+       COALESCE(source_service.specialty_id, source_doctor.specialty_id) AS source_specialty_id,
+       active_app.appointment_id AS active_appointment_id,
+       DATE_FORMAT(active_app.appointment_date, '%Y-%m-%d') AS active_appointment_date,
+       active_app.time_slot AS active_time_slot, active_app.status AS active_appointment_status,
+       active_app.doctor_id AS active_doctor_id, active_user.full_name AS active_doctor_name,
+       active_app.service_id AS active_service_id, active_service.name AS active_service_name,
+       completed_app.appointment_id AS completed_appointment_id,
+       EXISTS(SELECT 1 FROM appointment_records completed_record WHERE completed_record.appointment_id = completed_app.appointment_id) AS completed_has_record,
+       latest_app.appointment_id AS latest_appointment_id, latest_app.status AS latest_appointment_status,
+       DATE_FORMAT(latest_app.appointment_date, '%Y-%m-%d') AS latest_appointment_date, latest_app.time_slot AS latest_time_slot
+       FROM follow_up_visits fv JOIN appointment_records mr ON mr.record_id = fv.record_id
+       JOIN appointments source_app ON source_app.appointment_id = mr.appointment_id
+       JOIN doctors source_doctor ON source_doctor.id = source_app.doctor_id
+       JOIN users source_user ON source_user.id = source_doctor.user_id
+       LEFT JOIN services source_service ON source_service.id = source_app.service_id
+       LEFT JOIN appointments active_app ON active_app.appointment_id = (
+         SELECT a2.appointment_id FROM appointments a2 WHERE a2.follow_up_id = fv.follow_up_id
+           AND a2.status IN ('PENDING','CONFIRMED') ORDER BY a2.appointment_id DESC LIMIT 1
+       )
+       LEFT JOIN doctors active_doctor ON active_doctor.id = active_app.doctor_id
+       LEFT JOIN users active_user ON active_user.id = active_doctor.user_id
+       LEFT JOIN services active_service ON active_service.id = active_app.service_id
+       LEFT JOIN appointments completed_app ON completed_app.appointment_id = (
+         SELECT a2.appointment_id FROM appointments a2 WHERE a2.follow_up_id = fv.follow_up_id
+           AND a2.status = 'COMPLETED' ORDER BY a2.appointment_id DESC LIMIT 1
+       )
+       LEFT JOIN appointments latest_app ON latest_app.appointment_id = (
+         SELECT a2.appointment_id FROM appointments a2 WHERE a2.follow_up_id = fv.follow_up_id
+           ORDER BY a2.appointment_id DESC LIMIT 1
+       )
+       WHERE mr.patient_id = ? ORDER BY fv.follow_up_date DESC, fv.follow_up_id DESC`, [req.user.id]
+    );
+    return res.json({ success: true, data: rows.map(decorateFollowUp) });
   } catch (error) { return next(error); }
 };
 
@@ -452,10 +530,14 @@ const getPendingDispensing = async (req, res, next) => {
   try {
     const today = clinicTodayISO();
     const [rows] = await pool.query(
-      `SELECT mr.record_id, mr.patient_id, mr.appointment_id, a.appointment_date, a.time_slot,
+      `SELECT mr.record_id, mr.patient_id, mr.appointment_id, DATE_FORMAT(a.appointment_date, '%Y-%m-%d') AS appointment_date, a.time_slot,
        p.full_name AS patient_name, p.phone AS patient_phone, du.full_name AS doctor_name,
        pr.prescription_id, pr.drug_id, d.name AS medicine_name, pr.quantity AS prescribed_quantity,
        pr.unit_price AS invoice_unit_price, pr.billing_status, pr.dispensing_source,
+       pr.dispensing_status, pr.dispensed_quantity, pr.dispensed_at,
+       (SELECT u.full_name FROM stock_movements sm LEFT JOIN users u ON u.id = sm.performed_by
+        WHERE sm.reference_type = 'PRESCRIPTION' AND sm.reference_id = pr.prescription_id
+          AND sm.reason = 'PRESCRIPTION_DISPENSE' ORDER BY sm.created_at DESC, sm.id DESC LIMIT 1) AS dispensed_by_name,
        d.stock_quantity, u.name AS unit_name,
        (SELECT COALESCE(SUM(b.quantity_remaining), 0) FROM drug_batches b
         WHERE b.drug_id = d.drug_id AND b.expires_on >= ? AND b.quantity_remaining > 0) AS available_quantity,
@@ -467,11 +549,12 @@ const getPendingDispensing = async (req, res, next) => {
        JOIN users p ON p.id = mr.patient_id JOIN doctors doc ON doc.id = mr.doctor_id JOIN users du ON du.id = doc.user_id
        JOIN prescriptions pr ON pr.record_id = mr.record_id JOIN drugs d ON d.drug_id = pr.drug_id
        LEFT JOIN units u ON u.unit_id = pr.unit_id
-       WHERE a.status = 'COMPLETED' AND pr.dispensing_status = 'PRESCRIBED'
+       WHERE a.status = 'COMPLETED'
+         AND (pr.dispensing_source IS NULL OR pr.dispensing_source <> 'EXTERNAL' OR pr.dispensing_status <> 'NOT_DISPENSED')
        ORDER BY a.appointment_date, mr.record_id, pr.prescription_id`, [today]
     );
     return res.json({ success: true, data: rows });
   } catch (error) { next(error); }
 };
 
-module.exports = { createMedicalRecord, getPatientRecords, getRecordDetail, getMyFollowUps, getClinicalCatalog, getPendingDispensing, dispensePrescriptions };
+module.exports = { createMedicalRecord, getPatientRecords, getRecordDetail, getMyFollowUps, getMyPatientFollowUps, getClinicalCatalog, getPendingDispensing, dispensePrescriptions };

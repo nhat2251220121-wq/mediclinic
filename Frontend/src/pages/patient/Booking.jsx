@@ -37,6 +37,10 @@ const Booking = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, updateProfile } = useAuth();
+  const requestedFollowUpId = new URLSearchParams(location.search).get('follow_up_id');
+  const [followUpInfo, setFollowUpInfo] = useState(null);
+  const [followUpLoading, setFollowUpLoading] = useState(Boolean(requestedFollowUpId));
+  const [followUpError, setFollowUpError] = useState('');
   const [services, setServices] = useState([]);
   const [clinicDoctors, setClinicDoctors] = useState([]);
   const [doctorsLoading, setDoctorsLoading] = useState(false);
@@ -50,7 +54,10 @@ const Booking = () => {
   const [bookingSymptoms, setBookingSymptoms] = useState(typeof location.state?.initialSymptoms === 'string' ? location.state.initialSymptoms : '');
   const requestedServiceId = new URLSearchParams(location.search).get('service_id') || location.state?.selectedService?.id;
   const [selectedServiceId, setSelectedServiceId] = useState(requestedServiceId ? String(requestedServiceId) : '');
-  const passedService = services.find((service) => Number(service.id) === Number(selectedServiceId)) || null;
+  const availableServices = requestedFollowUpId && followUpInfo?.source_specialty_id
+    ? services.filter((service) => Number(service.specialty_id) === Number(followUpInfo.source_specialty_id))
+    : services;
+  const passedService = availableServices.find((service) => Number(service.id) === Number(selectedServiceId)) || null;
 
   const [step, setStep] = useState(1); // 1: Điền thông tin, 2: Chọn phương thức & thanh toán, 3: Thành công
   const [isEditingInfo, setIsEditingInfo] = useState(true);
@@ -97,6 +104,34 @@ const Booking = () => {
   const selectedDoctor = clinicDoctors.find(d => Number(d.id) === Number(selectedDoctorId));
   const selectedSlotDetails = availableSlots.find((slot) => String(slot.slot_id) === String(selectedSlot));
   const weekDays = useMemo(() => generate14Days(), []);
+
+  useEffect(() => {
+    if (!requestedFollowUpId) {
+      setFollowUpInfo(null);
+      setFollowUpLoading(false);
+      setFollowUpError('');
+      return undefined;
+    }
+    let active = true;
+    setFollowUpInfo(null);
+    setFollowUpLoading(true);
+    setFollowUpError('');
+    axiosClient.get('/medical-records/follow-ups/mine')
+      .then((result) => {
+        if (!active) return;
+        const found = (result.data || []).find((item) => String(item.follow_up_id) === String(requestedFollowUpId));
+        if (!found) {
+          setFollowUpError('Không tìm thấy lời hẹn tái khám trong hồ sơ của tài khoản này.');
+          return;
+        }
+        setFollowUpInfo(found);
+        if (found.can_book && found.follow_up_date >= clinicToday()) setSelectedDate(found.follow_up_date);
+        else if (found.can_book) setSelectedDate(clinicToday());
+      })
+      .catch((error) => { if (active) setFollowUpError(error.message || 'Không tải được thông tin tái khám.'); })
+      .finally(() => { if (active) setFollowUpLoading(false); });
+    return () => { active = false; };
+  }, [requestedFollowUpId]);
 
   const updatePatientField = (field, value) => {
     dirtyProfileFields.current.add(field);
@@ -148,7 +183,12 @@ const Booking = () => {
         const rows = result.data || [];
         setServices(rows);
         setSelectedServiceId((current) => {
-          if (requestedServiceId && rows.some((service) => String(service.id) === String(requestedServiceId))) return String(requestedServiceId);
+          if (requestedServiceId && rows.some((service) => String(service.id) === String(requestedServiceId)
+            && (!followUpInfo?.source_specialty_id || Number(service.specialty_id) === Number(followUpInfo.source_specialty_id)))) return String(requestedServiceId);
+          if (followUpInfo?.source_service_id && rows.some((service) => Number(service.id) === Number(followUpInfo.source_service_id))) return String(followUpInfo.source_service_id);
+          if (followUpInfo?.source_specialty_id) {
+            return String(rows.find((service) => Number(service.specialty_id) === Number(followUpInfo.source_specialty_id))?.id || '');
+          }
           if (!current && suggestedSpecialtyId) {
             const suggestedService = rows.find((service) => Number(service.specialty_id) === Number(suggestedSpecialtyId));
             if (suggestedService) return String(suggestedService.id);
@@ -158,7 +198,7 @@ const Booking = () => {
       })
       .catch(() => { if (active) setCatalogError('Không tải được danh sách dịch vụ. Vui lòng thử lại.'); });
     return () => { active = false; };
-  }, [requestedServiceId, suggestedSpecialtyId]);
+  }, [requestedServiceId, suggestedSpecialtyId, followUpInfo?.source_service_id]);
 
   useEffect(() => {
     if (!passedService?.specialty_id) {
@@ -182,13 +222,14 @@ const Booking = () => {
         if (!active) return;
         const doctors = result.data || [];
         setClinicDoctors(doctors);
+        const previousDoctor = doctors.find((doctor) => Number(doctor.id) === Number(followUpInfo?.source_doctor_id));
         const suggested = doctors.find((doctor) => doctor.specialty_name?.toLocaleLowerCase('vi') === suggestedSpecialty.toLocaleLowerCase('vi'));
-        if (suggested || doctors[0]) setSelectedDoctorId(String((suggested || doctors[0]).id));
+        if (previousDoctor || suggested || doctors[0]) setSelectedDoctorId(String((previousDoctor || suggested || doctors[0]).id));
       })
       .catch(() => { if (active) setDoctorError('Không tải được bác sĩ thuộc chuyên khoa của dịch vụ. Vui lòng thử lại.'); })
       .finally(() => { if (active) setDoctorsLoading(false); });
     return () => { active = false; };
-  }, [passedService?.id, passedService?.specialty_id, suggestedSpecialty]);
+  }, [passedService?.id, passedService?.specialty_id, suggestedSpecialty, followUpInfo?.source_doctor_id]);
 
   useEffect(() => {
     if (!selectedDoctorId || !selectedDate) { setAvailableSlots([]); setSelectedSlot(''); return undefined; }
@@ -204,6 +245,10 @@ const Booking = () => {
   // Bước 1 -> Bước 2
   const handleNextToPayment = (e) => {
     e.preventDefault();
+    if (requestedFollowUpId && (!followUpInfo || !followUpInfo.can_book || followUpLoading || followUpError)) {
+      setProfileError(followUpError || 'Lời hẹn tái khám hiện chưa thể đặt lịch. Vui lòng tải lại lịch sử khám.');
+      return;
+    }
     if (!hasValidSymptoms(bookingSymptoms)) {
       setSymptomsError('Vui lòng mô tả triệu chứng hoặc lý do khám bằng chữ hoặc số.');
       document.getElementById('booking-symptoms')?.focus();
@@ -247,6 +292,7 @@ const Booking = () => {
         payment_method: payMethod === 'CASH' ? 'CASH' : 'BANK_TRANSFER',
         slot_id: Number(selectedSlot),
         appointment_date: selectedDate,
+        ...(requestedFollowUpId ? { follow_up_id: Number(requestedFollowUpId) } : {}),
         initial_symptoms: bookingSymptoms.trim(),
         ai_predicted_specialty: suggestedSpecialty || null,
         full_name: patientInfo.fullName, phone_number: patientInfo.phoneNumber, dob: patientInfo.dob || null,
@@ -277,12 +323,20 @@ const Booking = () => {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-12 font-sans">
+    <div className="mx-auto w-full min-w-0 max-w-5xl space-y-6 pb-12 font-sans">
       {/* ======================================================== */}
       {/* BƯỚC 1: ĐẶT LỊCH KHÁM                                     */}
       {/* ======================================================== */}
       {step === 1 && (
         <div className="space-y-6">
+          {requestedFollowUpId && <section className="rounded-2xl border border-teal-200 bg-teal-50 p-4 text-sm text-teal-950">
+            <h2 className="font-bold">Đặt lịch tái khám</h2>
+            {followUpLoading ? <p className="mt-1">Đang tải lời hẹn tái khám…</p> : followUpError ? <p role="alert" className="mt-1 text-rose-700">{followUpError}</p> : followUpInfo ? <>
+              <p className="mt-1">Ngày bác sĩ đề xuất: <strong>{followUpInfo.follow_up_date}</strong>{followUpInfo.source_service_name ? ` · Dịch vụ trước: ${followUpInfo.source_service_name}` : ''}</p>
+              {followUpInfo.instruction && <p className="mt-1 break-words">Hướng dẫn: {followUpInfo.instruction}</p>}
+              <p className="mt-1 text-xs text-teal-800">Hệ thống ưu tiên bác sĩ cũ và ngày đề xuất khi còn phù hợp. Bạn có thể chọn ngày hoặc bác sĩ khác đủ điều kiện.</p>
+            </> : null}
+          </section>}
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
             <h2 className="text-2xl font-black text-slate-800 tracking-tight">Đặt lịch khám bệnh</h2>
             <p className="text-xs text-slate-500 mt-1">Hệ thống Y tế thông minh MediClinic</p>
@@ -305,10 +359,10 @@ const Booking = () => {
             <span className="text-xs font-bold uppercase tracking-wider text-sky-700 block">Thông tin dịch vụ</span>
             <div>
               <label htmlFor="booking-service" className="mb-1 block text-xs font-semibold text-slate-600">Dịch vụ khám *</label>
-              <select id="booking-service" value={passedService?.id || ''} onChange={handleServiceChange} disabled={!services.length}
+              <select id="booking-service" value={passedService?.id || ''} onChange={handleServiceChange} disabled={!availableServices.length || (Boolean(requestedFollowUpId) && followUpLoading)}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-sm">
-                {!services.length && <option value="">{catalogError || 'Đang tải dịch vụ...'}</option>}
-                {services.map((service) => <option key={service.id} value={service.id}>{service.name} · {Number(service.price || 0).toLocaleString('vi-VN')} ₫</option>)}
+                {!availableServices.length && <option value="">{requestedFollowUpId && followUpInfo?.source_specialty_id ? 'Không có dịch vụ đang hoạt động thuộc chuyên khoa của lời hẹn.' : catalogError || 'Đang tải dịch vụ...'}</option>}
+                {availableServices.map((service) => <option key={service.id} value={service.id}>{service.name} · {Number(service.price || 0).toLocaleString('vi-VN')} ₫</option>)}
               </select>
             </div>
             <div className="flex flex-col sm:flex-row gap-4 items-start bg-slate-50 p-4 rounded-2xl border border-slate-100">
@@ -530,7 +584,7 @@ const Booking = () => {
               Chọn bác sĩ phụ trách và thời gian khám
             </span>
 
-            <div className="overflow-x-auto border border-slate-100 rounded-2xl">
+            <div className="hidden overflow-x-auto border border-slate-100 rounded-2xl lg:block">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="bg-slate-50 text-slate-500 uppercase font-bold border-b border-slate-100">
@@ -569,10 +623,20 @@ const Booking = () => {
                 </tbody>
               </table>
             </div>
+            <div className="grid gap-2 lg:hidden">
+              {!clinicDoctors.length ? <p className="rounded-xl border border-slate-100 p-4 text-center text-sm text-slate-500">{doctorsLoading ? 'Đang tải bác sĩ thuộc chuyên khoa...' : doctorError || (!passedService?.specialty_id ? 'Dịch vụ chưa được gán chuyên khoa.' : 'Chưa có bác sĩ đang hoạt động thuộc chuyên khoa của dịch vụ.')}</p> : clinicDoctors.map((doc) => (
+                <button key={doc.id} type="button" onClick={() => setSelectedDoctorId(String(doc.id))} aria-pressed={Number(selectedDoctorId) === Number(doc.id)} className={`flex min-h-16 w-full min-w-0 items-center gap-3 rounded-xl border p-3 text-left transition ${Number(selectedDoctorId) === Number(doc.id) ? 'border-sky-500 bg-sky-50' : 'border-slate-200 bg-white'}`}>
+                  <ImageWithFallback src={doc.avatar_url} alt={doc.full_name} className="h-11 w-11 shrink-0 rounded-full object-cover" fallback={<span className="font-bold">{doc.full_name?.charAt(0) || 'B'}</span>} />
+                  <span className="min-w-0 flex-1"><span className="block break-words text-sm font-bold text-slate-800">{doc.full_name}</span><span className="mt-0.5 block break-words text-xs text-teal-700">{doc.specialty_name || 'Chưa phân chuyên khoa'} · {doc.room_name || doc.room_number || 'Chưa phân phòng'}</span></span>
+                  <span aria-hidden="true" className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${Number(selectedDoctorId) === Number(doc.id) ? 'border-sky-600' : 'border-slate-400'}`}>{Number(selectedDoctorId) === Number(doc.id) && <span className="h-2.5 w-2.5 rounded-full bg-sky-600" />}</span>
+                </button>
+              ))}
+            </div>
 
             {/* Ngày khám */}
             <div className="space-y-2">
               <label className="text-xs font-bold text-slate-700 block">Ngày khám:</label>
+              {requestedFollowUpId && <input type="date" min={clinicToday()} value={selectedDate} onChange={(event) => { setSelectedDate(event.target.value); setSelectedSlot(''); }} className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-sm sm:max-w-xs" />}
               <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
                 {weekDays.map((d) => (
                   <button
@@ -808,6 +872,7 @@ const Booking = () => {
           appointmentId={createdAppointmentId}
           patientName={patientInfo.fullName}
           amount={passedService?.price}
+          lockedPaymentMethod="BANK_TRANSFER"
           initialPaymentMethod="BANK_TRANSFER"
           onSuccess={() => {
               setPaymentConfirmed(true);

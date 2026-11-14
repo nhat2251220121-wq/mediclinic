@@ -1,0 +1,166 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="1320" viewBox="0 0 2200 1320">
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#77938e"/></marker></defs>
+<rect width="100%" height="100%" fill="#f4f7f6"/>
+<text x="42" y="52" font-family="Arial, sans-serif" font-size="31" font-weight="700" fill="#193b38">ERD MediClinic · Bệnh án và kê đơn</text>
+<text x="44" y="82" font-family="Arial, sans-serif" font-size="17" font-weight="400" fill="#536b67">PK/FK và bội số theo schema; FK trỏ ra ngoài miền được ghi trong cột.</text>
+<line x1="42" y1="101" x2="2158" y2="101" stroke="#cad8d5" stroke-width="2"/>
+<polyline points="430,205 480,205 480,250 530,250" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="438" y="192" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#536b67">patient_id · 1:N</text>
+<polyline points="430,300 485,300 485,420 1010,420 1010,445 1060,445" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="650" y="407" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#536b67">patient_id · 1:N</text>
+<polyline points="760,397 760,450" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="780" y="435" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#536b67">doctor_id · 1:N</text>
+<polyline points="960,555 1010,555 1010,390 1060,390" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="970" y="541" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#536b67">doctor_id · 1:N</text>
+<polyline points="960,250 1010,250 1010,340 1060,340" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="965" y="237" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#536b67">appointment_id · 1:0..1 UNIQUE</text>
+<polyline points="1490,370 1640,370" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="1535" y="356" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#536b67">record_id · 1:N</text>
+<polyline points="430,900 480,900 480,120 1600,120 1600,290 1640,290" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="1020" y="107" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#536b67">drug_id · 1:N</text>
+<polyline points="430,500 500,500 500,140 1575,140 1575,435 1640,435" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="1050" y="127" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#536b67">unit_id · 1:N</text>
+<polyline points="1450,760 1530,760 1530,500 1640,500" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="1458" y="747" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#536b67">meal_relation_id · 1:N</text>
+<polyline points="1900,702 1900,760" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="1920" y="738" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#536b67">prescription_id · 1:N</text>
+<polyline points="1450,960 1580,960 1580,900 1640,900" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="1460" y="947" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#536b67">time_id · 1:N</text>
+<rect x="40" y="145" width="390" height="190" rx="14" fill="#ffffff" stroke="#cad8d5" stroke-width="2"/>
+<path d="M54 145 H416 Q430 145 430 159 V197 H40 V159 Q40 145 54 145" fill="#286b63"/>
+<text x="56" y="179" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff">users</text>
+<rect x="53" y="208" width="31" height="22" rx="5" fill="#176b55" stroke="#176b55" stroke-width="2"/>
+<text x="58" y="225" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">PK</text>
+<text x="93" y="225" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">id INT</text>
+<text x="57" y="256" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">full_name VARCHAR(150)</text>
+<text x="57" y="287" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">role ENUM</text>
+<text x="57" y="318" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">phone VARCHAR(20)</text>
+<rect x="40" y="435" width="390" height="128" rx="14" fill="#ffffff" stroke="#cad8d5" stroke-width="2"/>
+<path d="M54 435 H416 Q430 435 430 449 V487 H40 V449 Q40 435 54 435" fill="#286b63"/>
+<text x="56" y="469" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff">units</text>
+<rect x="53" y="498" width="31" height="22" rx="5" fill="#176b55" stroke="#176b55" stroke-width="2"/>
+<text x="58" y="515" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">PK</text>
+<text x="93" y="515" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">unit_id INT</text>
+<text x="57" y="546" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">name VARCHAR(50) UNIQUE</text>
+<rect x="40" y="835" width="390" height="221" rx="14" fill="#ffffff" stroke="#cad8d5" stroke-width="2"/>
+<path d="M54 835 H416 Q430 835 430 849 V887 H40 V849 Q40 835 54 835" fill="#286b63"/>
+<text x="56" y="869" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff">drugs</text>
+<rect x="53" y="898" width="31" height="22" rx="5" fill="#176b55" stroke="#176b55" stroke-width="2"/>
+<text x="58" y="915" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">PK</text>
+<text x="93" y="915" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">drug_id INT</text>
+<rect x="53" y="929" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="58" y="946" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="93" y="946" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">unit_id INT NULL</text>
+<text x="57" y="977" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">name VARCHAR(150)</text>
+<text x="57" y="1008" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">price DECIMAL(10,2)</text>
+<text x="57" y="1039" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">stock_quantity INT</text>
+<rect x="530" y="145" width="430" height="252" rx="14" fill="#ffffff" stroke="#cad8d5" stroke-width="2"/>
+<path d="M544 145 H946 Q960 145 960 159 V197 H530 V159 Q530 145 544 145" fill="#286b63"/>
+<text x="546" y="179" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff">appointments</text>
+<rect x="543" y="208" width="31" height="22" rx="5" fill="#176b55" stroke="#176b55" stroke-width="2"/>
+<text x="548" y="225" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">PK</text>
+<text x="583" y="225" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">appointment_id INT</text>
+<rect x="543" y="239" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="548" y="256" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="583" y="256" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">patient_id INT → users.id</text>
+<rect x="543" y="270" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="548" y="287" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="583" y="287" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">doctor_id INT → doctors.id</text>
+<rect x="543" y="301" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="548" y="318" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="583" y="318" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">service_id INT NULL</text>
+<text x="547" y="349" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">appointment_date DATE</text>
+<text x="547" y="380" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">status ENUM</text>
+<rect x="530" y="450" width="430" height="190" rx="14" fill="#ffffff" stroke="#cad8d5" stroke-width="2"/>
+<path d="M544 450 H946 Q960 450 960 464 V502 H530 V464 Q530 450 544 450" fill="#286b63"/>
+<text x="546" y="484" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff">doctors</text>
+<rect x="543" y="513" width="31" height="22" rx="5" fill="#176b55" stroke="#176b55" stroke-width="2"/>
+<text x="548" y="530" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">PK</text>
+<text x="583" y="530" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">id INT</text>
+<rect x="543" y="544" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="548" y="561" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="583" y="561" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">user_id INT → users.id</text>
+<rect x="543" y="575" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="548" y="592" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="583" y="592" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">specialty_id INT NULL</text>
+<rect x="543" y="606" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="548" y="623" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="583" y="623" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">room_id INT NULL</text>
+<rect x="1060" y="260" width="430" height="221" rx="14" fill="#ffffff" stroke="#cad8d5" stroke-width="2"/>
+<path d="M1074 260 H1476 Q1490 260 1490 274 V312 H1060 V274 Q1060 260 1074 260" fill="#286b63"/>
+<text x="1076" y="294" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff">appointment_records</text>
+<rect x="1073" y="323" width="31" height="22" rx="5" fill="#176b55" stroke="#176b55" stroke-width="2"/>
+<text x="1078" y="340" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">PK</text>
+<text x="1113" y="340" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">record_id INT</text>
+<rect x="1073" y="354" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="1078" y="371" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="1113" y="371" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">appointment_id INT · UNIQUE</text>
+<rect x="1073" y="385" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="1078" y="402" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="1113" y="402" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">doctor_id INT</text>
+<rect x="1073" y="416" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="1078" y="433" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="1113" y="433" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">patient_id INT</text>
+<text x="1077" y="464" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">created_at DATETIME</text>
+<rect x="1060" y="680" width="390" height="159" rx="14" fill="#ffffff" stroke="#cad8d5" stroke-width="2"/>
+<path d="M1074 680 H1436 Q1450 680 1450 694 V732 H1060 V694 Q1060 680 1074 680" fill="#286b63"/>
+<text x="1076" y="714" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff">meal_relations</text>
+<rect x="1073" y="743" width="31" height="22" rx="5" fill="#176b55" stroke="#176b55" stroke-width="2"/>
+<text x="1078" y="760" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">PK</text>
+<text x="1113" y="760" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">relation_id INT</text>
+<text x="1077" y="791" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">name VARCHAR(50) UNIQUE</text>
+<text x="1077" y="822" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">is_active BOOLEAN</text>
+<rect x="1060" y="885" width="390" height="128" rx="14" fill="#ffffff" stroke="#cad8d5" stroke-width="2"/>
+<path d="M1074 885 H1436 Q1450 885 1450 899 V937 H1060 V899 Q1060 885 1074 885" fill="#286b63"/>
+<text x="1076" y="919" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff">dosage_times</text>
+<rect x="1073" y="948" width="31" height="22" rx="5" fill="#176b55" stroke="#176b55" stroke-width="2"/>
+<text x="1078" y="965" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">PK</text>
+<text x="1113" y="965" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">time_id INT</text>
+<text x="1077" y="996" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">name VARCHAR(50) UNIQUE</text>
+<rect x="1640" y="140" width="500" height="562" rx="14" fill="#ffffff" stroke="#cad8d5" stroke-width="2"/>
+<path d="M1654 140 H2126 Q2140 140 2140 154 V192 H1640 V154 Q1640 140 1654 140" fill="#286b63"/>
+<text x="1656" y="174" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff">prescriptions</text>
+<rect x="1653" y="203" width="31" height="22" rx="5" fill="#176b55" stroke="#176b55" stroke-width="2"/>
+<text x="1658" y="220" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">PK</text>
+<text x="1693" y="220" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">prescription_id INT</text>
+<rect x="1653" y="234" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="1658" y="251" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="1693" y="251" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">record_id INT</text>
+<rect x="1653" y="265" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="1658" y="282" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="1693" y="282" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">drug_id INT</text>
+<rect x="1653" y="296" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="1658" y="313" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="1693" y="313" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">unit_id INT NULL</text>
+<rect x="1653" y="327" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="1658" y="344" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="1693" y="344" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">meal_relation_id INT NULL</text>
+<text x="1657" y="375" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">dosage VARCHAR(100)</text>
+<text x="1657" y="406" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">frequency VARCHAR(100)</text>
+<text x="1657" y="437" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">duration INT</text>
+<text x="1657" y="468" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">quantity INT UNSIGNED</text>
+<text x="1657" y="499" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">unit_price DECIMAL(12,2)</text>
+<text x="1657" y="530" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">billing_status ENUM</text>
+<text x="1657" y="561" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">dispensing_status ENUM</text>
+<text x="1657" y="592" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">dispensing_source ENUM NULL</text>
+<text x="1657" y="623" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">dispensed_at DATETIME NULL</text>
+<text x="1657" y="654" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">dispensed_quantity INT UNSIGNED</text>
+<text x="1657" y="685" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">instructions TEXT</text>
+<rect x="1640" y="760" width="500" height="159" rx="14" fill="#ffffff" stroke="#cad8d5" stroke-width="2"/>
+<path d="M1654 760 H2126 Q2140 760 2140 774 V812 H1640 V774 Q1640 760 1654 760" fill="#286b63"/>
+<text x="1656" y="794" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff">prescription_times</text>
+<rect x="1653" y="823" width="31" height="22" rx="5" fill="#176b55" stroke="#176b55" stroke-width="2"/>
+<text x="1658" y="840" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">PK</text>
+<text x="1693" y="840" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">id INT</text>
+<rect x="1653" y="854" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="1658" y="871" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="1693" y="871" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">prescription_id INT</text>
+<rect x="1653" y="885" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="1658" y="902" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="1693" y="902" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">time_id INT → dosage_times.time_id</text>
+<rect x="1640" y="1010" width="500" height="135" rx="12" fill="#fff8e9" stroke="#e6cf9c" stroke-width="2"/>
+<text x="1656" y="1038" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#193b38">Bàn giao thuốc</text>
+<text x="1656" y="1067" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#536b67">dispensing_source: CLINIC / EXTERNAL / NULL.</text>
+<text x="1656" y="1091" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#536b67">dispensing_status: PRESCRIBED / DISPENSED / NOT_DISPENSED.</text>
+<text x="1656" y="1115" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#536b67">Không có prescriptions.dispensed_by trong schema.</text>
+</svg>

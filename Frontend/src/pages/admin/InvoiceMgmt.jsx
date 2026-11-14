@@ -59,6 +59,7 @@ const InvoiceMgmt = () => {
 
   // State cho Modal thanh toán
   const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [selectedPaymentPurpose, setSelectedPaymentPurpose] = useState('APPOINTMENT');
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [cashProcessing, setCashProcessing] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -93,8 +94,9 @@ const InvoiceMgmt = () => {
     }
   };
 
-  const handleOpenPaymentModal = (invoice) => {
+  const handleOpenPaymentModal = (invoice, purpose = 'APPOINTMENT') => {
     setSelectedInvoice(invoice);
+    setSelectedPaymentPurpose(purpose);
     setIsPaymentModalOpen(true);
   };
 
@@ -105,12 +107,12 @@ const InvoiceMgmt = () => {
       .some((value) => String(value || '').toLocaleLowerCase('vi').includes(query));
   });
 
-  const confirmCash = async (invoice) => {
+  const confirmCash = async (invoice, purpose = 'APPOINTMENT') => {
     const due = Number(invoice.amount_due ?? invoice.total_amount);
     if (due <= 0 || !window.confirm(`Bệnh nhân: ${invoice.patient_name}\nHóa đơn: #INV-${invoice.id}\nSố còn thiếu hiện tại: ${formatMoney(due)}\n\nXác nhận khoản tiền này đã được thực nhận tại quầy?`)) return;
     setCashProcessing(invoice.id);
     try {
-      await axiosClient.patch(`/invoices/${invoice.id}/pay`, { expectedAmount: due });
+      await axiosClient.patch(`/invoices/${invoice.id}/pay`, { expectedAmount: due, purpose });
       await fetchInvoices();
     } catch (error) {
       window.alert(error.message || 'Không xác nhận được khoản thu. Hãy kiểm tra lại hóa đơn.');
@@ -160,6 +162,8 @@ const InvoiceMgmt = () => {
                 const paid = Number(inv.amount_paid || 0);
                 const medicineFee = Number(inv.medicine_fee || 0);
                 const medicineLines = (inv.items || []).filter((line) => line.item_type === 'MEDICINE');
+                const medicineBalance = inv.appointment_status === 'COMPLETED' && medicineFee > 0 && paid >= Number(inv.service_fee || 0) && due > 0;
+                const currentMethod = medicineBalance ? inv.medicine_payment_method : inv.payment_method;
                 const paymentState = getPaymentState(inv);
                 return <tr key={inv.id} className="align-top transition-colors hover:bg-slate-50/70">
                   <td className="px-4 py-4">
@@ -190,8 +194,11 @@ const InvoiceMgmt = () => {
                   </td>
                   <td className="px-4 py-4">
                     <span className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-medium ${paymentState.className}`}>{paymentState.label}</span>
-                    <p className="mt-2 whitespace-nowrap text-xs text-slate-600">{getPaymentMethod(inv.payment_method)}</p>
-                    {inv.cash_requested_at && inv.payment_status !== 'PAID' && <p className="mt-1 max-w-44 text-xs leading-5 text-amber-800">Đang chờ thu tiền mặt tại quầy</p>}
+                    {medicineBalance ? <>
+                      <p className="mt-2 whitespace-nowrap text-xs text-slate-600">Phí khám: {getPaymentMethod(inv.payment_method)}</p>
+                      <p className="mt-1 whitespace-nowrap text-xs text-slate-600">Tiền thuốc: {getPaymentMethod(inv.medicine_payment_method)}</p>
+                    </> : <p className="mt-2 whitespace-nowrap text-xs text-slate-600">{getPaymentMethod(inv.payment_method)}</p>}
+                    {inv.cash_requested_at && due > 0 && currentMethod === 'CASH' && <p className="mt-1 max-w-44 text-xs leading-5 text-amber-800">Đang chờ thu tiền mặt tại quầy</p>}
                     {/(REVIEW|OVERPAID)/.test(inv.reconciliation_statuses || '') && <p className="mt-1 max-w-44 text-xs leading-5 font-medium text-amber-800">Cần đối soát: {inv.reconciliation_statuses}</p>}
                     {(inv.payments?.length || 0) > 0 && <details className="mt-2 text-xs">
                       <summary className="w-fit cursor-pointer font-medium text-teal-800">Giao dịch ({inv.payments.length})</summary>
@@ -207,9 +214,9 @@ const InvoiceMgmt = () => {
                   <td className="px-4 py-4">
                     <div className="flex flex-wrap items-center gap-2">
                       {inv.invoice_status === 'VOID' && <span className="text-xs leading-5 text-slate-700">Hóa đơn hết hiệu lực · khoản thu gốc được giữ để đối soát</span>}
-                      {inv.invoice_status !== 'VOID' && !['CANCELLED', 'NO_SHOW'].includes(inv.appointment_status) && due > 0 && inv.payment_method === 'CASH' && <button disabled={cashProcessing === inv.id} onClick={() => confirmCash(inv)} className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 transition-colors hover:bg-emerald-100 disabled:opacity-50"><Banknote className="h-3.5 w-3.5" />{cashProcessing === inv.id ? 'Đang ghi nhận…' : 'Xác nhận tiền mặt'}</button>}
-                      {inv.invoice_status !== 'VOID' && !['CANCELLED', 'NO_SHOW'].includes(inv.appointment_status) && due > 0 && inv.payment_method === 'BANK_TRANSFER' && <button onClick={() => handleOpenPaymentModal(inv)} className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-800 transition-colors hover:bg-teal-100"><QrCode className="h-3.5 w-3.5" />Xem QR · chờ webhook</button>}
-                      {inv.invoice_status !== 'VOID' && !['CANCELLED', 'NO_SHOW'].includes(inv.appointment_status) && due > 0 && !['CASH', 'BANK_TRANSFER'].includes(inv.payment_method) && <span className="text-xs text-slate-600">Chưa chọn phương thức thanh toán</span>}
+                      {inv.invoice_status !== 'VOID' && !['CANCELLED', 'NO_SHOW'].includes(inv.appointment_status) && due > 0 && currentMethod === 'CASH' && <button disabled={cashProcessing === inv.id} onClick={() => confirmCash(inv, medicineBalance ? 'MEDICINE_BALANCE' : 'APPOINTMENT')} className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 transition-colors hover:bg-emerald-100 disabled:opacity-50"><Banknote className="h-3.5 w-3.5" />{cashProcessing === inv.id ? 'Đang ghi nhận…' : `Xác nhận tiền mặt${medicineBalance ? ' · thuốc' : ''}`}</button>}
+                      {inv.invoice_status !== 'VOID' && !['CANCELLED', 'NO_SHOW'].includes(inv.appointment_status) && due > 0 && currentMethod === 'BANK_TRANSFER' && <button onClick={() => handleOpenPaymentModal(inv, medicineBalance ? 'MEDICINE_BALANCE' : 'APPOINTMENT')} className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-800 transition-colors hover:bg-teal-100"><QrCode className="h-3.5 w-3.5" />Xem QR · chờ webhook</button>}
+                      {inv.invoice_status !== 'VOID' && !['CANCELLED', 'NO_SHOW'].includes(inv.appointment_status) && due > 0 && !['CASH', 'BANK_TRANSFER'].includes(currentMethod) && <span className="text-xs text-slate-600">{medicineBalance ? 'Chưa chọn phương thức cho tiền thuốc' : 'Chưa chọn phương thức thanh toán'}</span>}
                       {due <= 0 && inv.invoice_status !== 'VOID' && <span className="text-xs font-semibold text-emerald-800">Đã thanh toán</span>}
                       {inv.appointment_status === 'NO_SHOW' && <span className="text-xs leading-5 text-amber-800">Bệnh nhân được ghi nhận vắng mặt</span>}
                       {(inv.payments?.length || 0) > 0 && <button onClick={() => setReceiptInvoice(inv)} className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"><Printer className="h-3.5 w-3.5" />Biên nhận</button>}
@@ -230,7 +237,8 @@ const InvoiceMgmt = () => {
           appointmentId={selectedInvoice.appointment_id}
           patientName={selectedInvoice.patient_name}
           amount={selectedInvoice.total_amount}
-          lockedPaymentMethod="BANK_TRANSFER"
+          paymentPurpose={selectedPaymentPurpose}
+          lockedPaymentMethod={selectedPaymentPurpose === 'MEDICINE_BALANCE' ? 'BANK_TRANSFER' : 'BANK_TRANSFER'}
           onSuccess={() => fetchInvoices()}
         />
       )}
@@ -241,7 +249,7 @@ const InvoiceMgmt = () => {
             <div><h3 className="text-xl font-black">Biên nhận thanh toán</h3><p className="text-sm text-slate-500">MediClinic · Hóa đơn #INV-{receiptInvoice.id}</p></div>
             <button className="receipt-close rounded-lg border px-3 py-1 text-sm" onClick={() => setReceiptInvoice(null)}>Đóng</button>
           </div>
-          <dl className="grid grid-cols-2 gap-3 border-y py-4 text-sm"><dt>Bệnh nhân</dt><dd className="text-right font-semibold">{receiptInvoice.patient_name}</dd><dt>Điện thoại</dt><dd className="text-right">{receiptInvoice.patient_phone || '—'}</dd><dt>Phương thức</dt><dd className="text-right">{getPaymentMethod(receiptInvoice.payment_method)}</dd><dt>Tổng hóa đơn</dt><dd className="text-right">{formatMoney(receiptInvoice.total_amount)}</dd><dt>Đã thu</dt><dd className="text-right font-bold text-emerald-700">{formatMoney(receiptInvoice.amount_paid || 0)}</dd><dt>Còn thiếu</dt><dd className="text-right">{formatMoney(receiptInvoice.amount_due || 0)}</dd></dl>
+          <dl className="grid grid-cols-2 gap-3 border-y py-4 text-sm"><dt>Bệnh nhân</dt><dd className="text-right font-semibold">{receiptInvoice.patient_name}</dd><dt>Điện thoại</dt><dd className="text-right">{receiptInvoice.patient_phone || '—'}</dd><dt>Phương thức phí khám</dt><dd className="text-right">{getPaymentMethod(receiptInvoice.payment_method)}</dd>{Number(receiptInvoice.medicine_fee || 0) > 0 && <><dt>Phương thức tiền thuốc</dt><dd className="text-right">{getPaymentMethod(receiptInvoice.medicine_payment_method)}</dd></>}<dt>Tổng hóa đơn</dt><dd className="text-right">{formatMoney(receiptInvoice.total_amount)}</dd><dt>Đã thu</dt><dd className="text-right font-bold text-emerald-700">{formatMoney(receiptInvoice.amount_paid || 0)}</dd><dt>Còn thiếu</dt><dd className="text-right">{formatMoney(receiptInvoice.amount_due || 0)}</dd></dl>
           <h4 className="mt-4 font-bold">Dòng hóa đơn</h4><div className="mt-2 space-y-1">{receiptInvoice.items?.map(line => <div key={line.id} className="flex justify-between gap-3 border-b py-2 text-sm"><span>{line.description} · {Number(line.quantity).toLocaleString('vi-VN')} × {formatMoney(line.unit_price)}</span><strong className="whitespace-nowrap">{formatMoney(line.line_total)}</strong></div>)}</div>
           <h4 className="mt-4 font-bold">Giao dịch đã ghi nhận</h4>
           <div className="mt-2 space-y-2">{receiptInvoice.payments?.map(payment => <div key={payment.payment_id} className="flex justify-between gap-3 border-b pb-2 text-sm"><span>{getPaymentMethod(payment.payment_method)} · {payment.transaction_code || payment.provider}<small className="block text-slate-500">{formatVietnamDateTime(payment.created_at)}{payment.received_by_name ? ` · Thu ngân: ${payment.received_by_name}` : ''}</small></span><strong className="whitespace-nowrap">{formatMoney(payment.amount)}</strong></div>)}</div>

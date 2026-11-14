@@ -2,14 +2,14 @@ const express = require('express');
 const router = express.Router();
 const medicalRecordController = require('../controllers/medicalRecordController');
 const verifyToken = require('../middlewares/verifyToken');
-const { isDoctor } = require('../middlewares/checkRole');
-const { isAdmin } = require('../middlewares/checkRole');
+const { isDoctor, isAdmin, isPatient } = require('../middlewares/checkRole');
 
 router.use(verifyToken);
 
 // Bác sĩ lưu hồ sơ bệnh án và đơn thuốc
 router.post('/', isDoctor, medicalRecordController.createMedicalRecord);
 router.get('/follow-ups', isDoctor, medicalRecordController.getMyFollowUps);
+router.get('/follow-ups/mine', isPatient, medicalRecordController.getMyPatientFollowUps);
 router.get('/catalog', isDoctor, medicalRecordController.getClinicalCatalog);
 router.get('/pending-dispensing', isAdmin, medicalRecordController.getPendingDispensing);
 router.post('/:id/dispense', isAdmin, medicalRecordController.dispensePrescriptions);

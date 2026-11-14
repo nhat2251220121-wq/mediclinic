@@ -1,0 +1,169 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="1320" viewBox="0 0 2200 1320">
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#77938e"/></marker></defs>
+<rect width="100%" height="100%" fill="#f4f7f6"/>
+<text x="42" y="52" font-family="Arial, sans-serif" font-size="31" font-weight="700" fill="#193b38">ERD MediClinic · Lịch làm và lịch hẹn</text>
+<text x="44" y="82" font-family="Arial, sans-serif" font-size="17" font-weight="400" fill="#536b67">Nguồn: Backend/database/schema.sql và migrations 002, 005–007; PK/FK đánh dấu theo constraint thật.</text>
+<line x1="42" y1="101" x2="2158" y2="101" stroke="#cad8d5" stroke-width="2"/>
+<polyline points="400,205 470,205 470,280 530,280" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="421" y="194" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#536b67">user_id → users.id · 1:1</text>
+<polyline points="400,425 475,425 475,338 530,338" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="408" y="412" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#536b67">specialty_id · 1:N</text>
+<polyline points="400,665 485,665 485,395 530,395" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="410" y="652" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#536b67">room_id · 1:N</text>
+<polyline points="400,425 500,425 500,635 530,635" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="405" y="450" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#536b67">specialty_id · 1:N</text>
+<polyline points="950,300 995,300 995,170 1040,170" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="960" y="286" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#536b67">doctor_id · 1:N</text>
+<polyline points="400,205 470,205 470,115 1500,115 1500,370 1560,370" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="1110" y="102" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#536b67">patient_id · 1:N</text>
+<polyline points="950,360 1480,360 1480,438 1560,438" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="1160" y="348" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#536b67">doctor_id · 1:N</text>
+<polyline points="950,635 1505,635 1505,504 1560,504" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="1200" y="621" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#536b67">service_id · 1:N</text>
+<polyline points="400,925 470,925 470,830 995,830 995,520 1040,520" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="810" y="817" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#536b67">shift_id · 1:N</text>
+<polyline points="1250,300 1250,390" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="1270" y="350" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#536b67">1:N</text>
+<polyline points="1250,630 1250,730" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="1270" y="690" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#536b67">1:N</text>
+<polyline points="1460,515 1510,515 1510,570 1560,570" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="1470" y="500" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#536b67">shift_employee_id · 1:N</text>
+<polyline points="1460,845 1520,845 1520,638 1560,638" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="1464" y="830" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#536b67">slot_id · 1:0..1 (UNIQUE)</text>
+<rect x="40" y="145" width="360" height="221" rx="14" fill="#ffffff" stroke="#cad8d5" stroke-width="2"/>
+<path d="M54 145 H386 Q400 145 400 159 V197 H40 V159 Q40 145 54 145" fill="#286b63"/>
+<text x="56" y="179" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff">users</text>
+<rect x="53" y="208" width="31" height="22" rx="5" fill="#176b55" stroke="#176b55" stroke-width="2"/>
+<text x="58" y="225" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">PK</text>
+<text x="93" y="225" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">id INT</text>
+<text x="57" y="256" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">full_name VARCHAR(150)</text>
+<text x="57" y="287" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">phone VARCHAR(20) UNIQUE</text>
+<text x="57" y="318" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">role ENUM</text>
+<text x="57" y="349" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">is_active BOOLEAN</text>
+<rect x="40" y="365" width="360" height="159" rx="14" fill="#ffffff" stroke="#cad8d5" stroke-width="2"/>
+<path d="M54 365 H386 Q400 365 400 379 V417 H40 V379 Q40 365 54 365" fill="#286b63"/>
+<text x="56" y="399" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff">specialties</text>
+<rect x="53" y="428" width="31" height="22" rx="5" fill="#176b55" stroke="#176b55" stroke-width="2"/>
+<text x="58" y="445" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">PK</text>
+<text x="93" y="445" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">id INT</text>
+<text x="57" y="476" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">name VARCHAR(150) UNIQUE</text>
+<text x="57" y="507" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">is_active BOOLEAN</text>
+<rect x="40" y="605" width="360" height="221" rx="14" fill="#ffffff" stroke="#cad8d5" stroke-width="2"/>
+<path d="M54 605 H386 Q400 605 400 619 V657 H40 V619 Q40 605 54 605" fill="#286b63"/>
+<text x="56" y="639" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff">rooms</text>
+<rect x="53" y="668" width="31" height="22" rx="5" fill="#176b55" stroke="#176b55" stroke-width="2"/>
+<text x="58" y="685" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">PK</text>
+<text x="93" y="685" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">id INT</text>
+<text x="57" y="716" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">room_number UNIQUE</text>
+<text x="57" y="747" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">name VARCHAR(100)</text>
+<text x="57" y="778" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">location VARCHAR(150)</text>
+<text x="57" y="809" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">is_active BOOLEAN</text>
+<rect x="40" y="855" width="360" height="190" rx="14" fill="#ffffff" stroke="#cad8d5" stroke-width="2"/>
+<path d="M54 855 H386 Q400 855 400 869 V907 H40 V869 Q40 855 54 855" fill="#286b63"/>
+<text x="56" y="889" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff">shifts</text>
+<rect x="53" y="918" width="31" height="22" rx="5" fill="#176b55" stroke="#176b55" stroke-width="2"/>
+<text x="58" y="935" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">PK</text>
+<text x="93" y="935" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">shift_id INT</text>
+<text x="57" y="966" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">name VARCHAR(50) UNIQUE</text>
+<text x="57" y="997" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">start_time TIME</text>
+<text x="57" y="1028" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">end_time TIME</text>
+<rect x="530" y="205" width="420" height="283" rx="14" fill="#ffffff" stroke="#cad8d5" stroke-width="2"/>
+<path d="M544 205 H936 Q950 205 950 219 V257 H530 V219 Q530 205 544 205" fill="#286b63"/>
+<text x="546" y="239" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff">doctors</text>
+<rect x="543" y="268" width="31" height="22" rx="5" fill="#176b55" stroke="#176b55" stroke-width="2"/>
+<text x="548" y="285" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">PK</text>
+<text x="583" y="285" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">id INT</text>
+<rect x="543" y="299" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="548" y="316" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="583" y="316" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">user_id INT · UNIQUE</text>
+<rect x="543" y="330" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="548" y="347" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="583" y="347" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">specialty_id INT NULL</text>
+<rect x="543" y="361" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="548" y="378" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="583" y="378" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">room_id INT NULL</text>
+<text x="547" y="409" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">bio TEXT</text>
+<text x="547" y="440" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">experience_years INT</text>
+<text x="547" y="471" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">is_active BOOLEAN</text>
+<rect x="530" y="555" width="420" height="252" rx="14" fill="#ffffff" stroke="#cad8d5" stroke-width="2"/>
+<path d="M544 555 H936 Q950 555 950 569 V607 H530 V569 Q530 555 544 555" fill="#286b63"/>
+<text x="546" y="589" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff">services</text>
+<rect x="543" y="618" width="31" height="22" rx="5" fill="#176b55" stroke="#176b55" stroke-width="2"/>
+<text x="548" y="635" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">PK</text>
+<text x="583" y="635" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">id INT</text>
+<rect x="543" y="649" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="548" y="666" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="583" y="666" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">specialty_id INT NULL</text>
+<text x="547" y="697" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">name VARCHAR(150)</text>
+<text x="547" y="728" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">price DECIMAL(10,2)</text>
+<text x="547" y="759" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">search_keywords TEXT</text>
+<text x="547" y="790" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">is_active BOOLEAN</text>
+<rect x="1040" y="105" width="420" height="190" rx="14" fill="#ffffff" stroke="#cad8d5" stroke-width="2"/>
+<path d="M1054 105 H1446 Q1460 105 1460 119 V157 H1040 V119 Q1040 105 1054 105" fill="#286b63"/>
+<text x="1056" y="139" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff">shift_day_employee</text>
+<rect x="1053" y="168" width="31" height="22" rx="5" fill="#176b55" stroke="#176b55" stroke-width="2"/>
+<text x="1058" y="185" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">PK</text>
+<text x="1093" y="185" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">id INT</text>
+<rect x="1053" y="199" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="1058" y="216" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="1093" y="216" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">doctor_id INT</text>
+<text x="1057" y="247" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">work_date DATE</text>
+<text x="1057" y="278" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">UNIQUE (doctor_id, work_date)</text>
+<rect x="1040" y="390" width="420" height="221" rx="14" fill="#ffffff" stroke="#cad8d5" stroke-width="2"/>
+<path d="M1054 390 H1446 Q1460 390 1460 404 V442 H1040 V404 Q1040 390 1054 390" fill="#286b63"/>
+<text x="1056" y="424" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff">shift_employee</text>
+<rect x="1053" y="453" width="31" height="22" rx="5" fill="#176b55" stroke="#176b55" stroke-width="2"/>
+<text x="1058" y="470" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">PK</text>
+<text x="1093" y="470" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">id INT</text>
+<rect x="1053" y="484" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="1058" y="501" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="1093" y="501" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">shift_day_employee_id INT</text>
+<rect x="1053" y="515" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="1058" y="532" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="1093" y="532" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">shift_id INT</text>
+<text x="1057" y="563" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">status ENUM</text>
+<text x="1057" y="594" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">UNIQUE (shift_day_employee_id, shift_id)</text>
+<rect x="1040" y="730" width="420" height="221" rx="14" fill="#ffffff" stroke="#cad8d5" stroke-width="2"/>
+<path d="M1054 730 H1446 Q1460 730 1460 744 V782 H1040 V744 Q1040 730 1054 730" fill="#286b63"/>
+<text x="1056" y="764" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff">shift_time_slots</text>
+<rect x="1053" y="793" width="31" height="22" rx="5" fill="#176b55" stroke="#176b55" stroke-width="2"/>
+<text x="1058" y="810" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">PK</text>
+<text x="1093" y="810" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">id INT</text>
+<rect x="1053" y="824" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="1058" y="841" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="1093" y="841" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">shift_employee_id INT</text>
+<text x="1057" y="872" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">start_time TIME</text>
+<text x="1057" y="903" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">end_time TIME</text>
+<text x="1057" y="934" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">status ENUM(AVAILABLE,BOOKED,OFF)</text>
+<rect x="1560" y="320" width="600" height="376" rx="14" fill="#ffffff" stroke="#cad8d5" stroke-width="2"/>
+<path d="M1574 320 H2146 Q2160 320 2160 334 V372 H1560 V334 Q1560 320 1574 320" fill="#286b63"/>
+<text x="1576" y="354" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff">appointments</text>
+<rect x="1573" y="383" width="31" height="22" rx="5" fill="#176b55" stroke="#176b55" stroke-width="2"/>
+<text x="1578" y="400" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">PK</text>
+<text x="1613" y="400" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">appointment_id INT</text>
+<rect x="1573" y="414" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="1578" y="431" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="1613" y="431" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">patient_id INT → users.id</text>
+<rect x="1573" y="445" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="1578" y="462" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="1613" y="462" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">doctor_id INT → doctors.id</text>
+<rect x="1573" y="476" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="1578" y="493" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="1613" y="493" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">service_id INT NULL → services.id</text>
+<rect x="1573" y="507" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="1578" y="524" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="1613" y="524" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">shift_employee_id INT NULL → shift_employee.id</text>
+<rect x="1573" y="538" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91" stroke-width="2"/>
+<text x="1578" y="555" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="1613" y="555" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">slot_id INT NULL → shift_time_slots.id</text>
+<text x="1577" y="586" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">appointment_date DATE</text>
+<text x="1577" y="617" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">time_slot VARCHAR(50)</text>
+<text x="1577" y="648" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">status ENUM</text>
+<text x="1577" y="679" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#193b38">initial_symptoms TEXT</text>
+<rect x="1560" y="760" width="600" height="159" rx="12" fill="#fff8e9" stroke="#e6cf9c" stroke-width="2"/>
+<text x="1576" y="788" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#193b38">Điểm cần đọc đúng</text>
+<text x="1576" y="817" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#536b67">appointments.slot_id là FK thật tới shift_time_slots.id.</text>
+<text x="1576" y="841" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#536b67">slot_id có UNIQUE: một slot tối đa một lịch hẹn.</text>
+<text x="1576" y="865" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#536b67">shift_employee_id là FK riêng, vẫn được giữ cho quan hệ ca/lịch cũ.</text>
+<text x="1576" y="889" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#536b67">specialty_id của services có thể NULL theo schema hiện tại.</text>
+</svg>

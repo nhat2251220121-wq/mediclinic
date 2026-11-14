@@ -15,6 +15,7 @@ const DoctorMgmt = () => {
   const [specialties, setSpecialties] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [saveError, setSaveError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
   const [actionNotice, setActionNotice] = useState(null);
   const [pendingDeactivateId, setPendingDeactivateId] = useState(null);
   const [pendingActivateId, setPendingActivateId] = useState(null);
@@ -45,7 +46,13 @@ const DoctorMgmt = () => {
   };
 
   const saveDoctor = async (event) => {
-    event.preventDefault(); setSaveError(''); setIsSaving(true);
+    event.preventDefault(); setSaveError('');
+    if (!editingDoctor && form.password.length < 12) {
+      setPasswordError('Mật khẩu khởi tạo cần ít nhất 12 ký tự.');
+      document.getElementById('doctor-password')?.focus();
+      return;
+    }
+    setPasswordError(''); setIsSaving(true);
     try {
       const payload = { ...form, specialty_id: form.specialty_id || null, room_id: form.room_id || null };
       let doctorId = editingDoctor?.id;
@@ -77,7 +84,15 @@ const DoctorMgmt = () => {
     setEditingDoctor(doctor);
     setForm({ full_name: doctor.full_name || '', phone: doctor.phone || '', email: doctor.email || '', password: '', specialty_id: doctor.specialty_id || '', room_id: doctor.room_id || '', bio: doctor.bio || '', experience_years: doctor.experience_years ?? 0 });
     setAvatarFile(null); setAvatarPreview(doctor.avatar_url || ''); setRemoveAvatar(false);
-    setSaveError('');
+    setSaveError(''); setPasswordError('');
+    setShowCreate(true);
+  };
+
+  const openCreate = () => {
+    setEditingDoctor(null);
+    setForm({ full_name: '', phone: '', email: '', password: '', specialty_id: '', room_id: '', bio: '', experience_years: 0 });
+    setAvatarFile(null); setAvatarPreview(''); setRemoveAvatar(false);
+    setSaveError(''); setPasswordError('');
     setShowCreate(true);
   };
 
@@ -129,7 +144,7 @@ const DoctorMgmt = () => {
         </div>
 
         <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-2">
-          <button onClick={() => setShowCreate(true)} className="px-4 py-2.5 bg-teal-800 hover:bg-teal-900 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2"><Plus className="w-4 h-4" />Tạo tài khoản bác sĩ</button>
+          <button onClick={openCreate} className="px-4 py-2.5 bg-teal-800 hover:bg-teal-900 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2"><Plus className="w-4 h-4" />Tạo tài khoản bác sĩ</button>
           <button
             onClick={fetchDoctors}
             className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
@@ -140,13 +155,13 @@ const DoctorMgmt = () => {
         </div>
       </div>
 
-      {saveError && <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{saveError}</div>}
-      {showCreate && <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/50 p-4">
-        <form onSubmit={saveDoctor} className="my-auto w-full max-w-2xl space-y-4 rounded-xl bg-white p-6 shadow-xl">
+      {showCreate && <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-3 sm:items-center sm:p-4">
+        <form onSubmit={saveDoctor} className="my-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl space-y-4 overflow-y-auto rounded-xl bg-white p-4 shadow-xl sm:max-h-[calc(100dvh-2rem)] sm:p-6">
           <div className="flex items-center justify-between"><h3 className="text-lg font-semibold">{editingDoctor ? 'Cập nhật bác sĩ' : 'Tạo tài khoản bác sĩ'}</h3><button type="button" onClick={() => { setShowCreate(false); setEditingDoctor(null); setAvatarFile(null); setAvatarPreview(''); setRemoveAvatar(false); }} aria-label="Đóng"><X className="h-5 w-5" /></button></div>
+          {saveError && <div role="alert" className="break-words rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{saveError}</div>}
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="flex items-center gap-3 sm:col-span-2"><ImageWithFallback src={avatarPreview} alt="Ảnh bác sĩ" className="h-16 w-16 rounded-full object-cover" fallback={<span className="font-bold text-xl">{form.full_name?.charAt(0) || 'B'}</span>} /><label className="cursor-pointer rounded-lg border px-3 py-2 text-sm">{avatarPreview ? 'Thay ảnh đại diện' : 'Chọn ảnh đại diện'}<input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event)=>{ const file=event.target.files?.[0]; if (!file) return; if (file.size > 5*1024*1024) { setSaveError('Ảnh không được vượt quá 5 MB.'); return; } setAvatarFile(file); setRemoveAvatar(false); setAvatarPreview(URL.createObjectURL(file)); setSaveError(''); }} /></label>{avatarPreview && <button type="button" onClick={()=>{ if (avatarFile) { setAvatarFile(null); setAvatarPreview(editingDoctor?.avatar_url || ''); setRemoveAvatar(false); } else { if (editingDoctor?.avatar_url && !window.confirm(`Gỡ ảnh đại diện của bác sĩ “${form.full_name}”? Thao tác chỉ hoàn tất khi lưu biểu mẫu.`)) return; setAvatarPreview(''); setRemoveAvatar(Boolean(editingDoctor?.avatar_url)); } }} className="text-sm text-rose-700">Bỏ ảnh</button>}</div>
-            {[['full_name','Họ và tên','text'],['phone','Số điện thoại','tel'],['email','Email','email'],...(!editingDoctor ? [['password','Mật khẩu khởi tạo (12 ký tự trở lên)','password']] : []),['experience_years','Số năm kinh nghiệm','number']].map(([key,label,type]) => <label key={key} className="space-y-1 text-sm"><span>{label}</span><input required={['full_name','phone','email','password'].includes(key)} type={type} min={type==='number'?0:undefined} value={form[key]} onChange={(event)=>setForm({...form,[key]:event.target.value})} className="w-full rounded-lg border border-slate-300 px-3 py-2" /></label>)}
+            {[['full_name','Họ và tên','text'],['phone','Số điện thoại','tel'],['email','Email','email'],...(!editingDoctor ? [['password','Mật khẩu khởi tạo','password']] : []),['experience_years','Số năm kinh nghiệm','number']].map(([key,label,type]) => <label key={key} className={`min-w-0 space-y-1 text-sm ${key === 'password' ? 'sm:col-span-2' : ''}`}><span>{label}{key === 'password' ? ' *' : ''}</span><input id={key === 'password' ? 'doctor-password' : undefined} required={['full_name','phone','email'].includes(key)} type={type} min={type==='number'?0:undefined} value={form[key]} aria-invalid={key === 'password' && Boolean(passwordError)} aria-describedby={key === 'password' ? 'doctor-password-help doctor-password-error' : undefined} onChange={(event)=>{ const value = event.target.value; setForm((current)=>({...current,[key]:value})); setSaveError(''); if (key === 'password') setPasswordError((current) => current ? (value.length < 12 ? 'Mật khẩu khởi tạo cần ít nhất 12 ký tự.' : '') : ''); }} className={`w-full min-w-0 rounded-lg border px-3 py-2 ${key === 'password' && passwordError ? 'border-rose-500 ring-1 ring-rose-200' : 'border-slate-300'}`} />{key === 'password' && <><span id="doctor-password-help" className="block break-words text-xs leading-5 text-slate-500">Mật khẩu khởi tạo cần ít nhất 12 ký tự.</span>{passwordError && <span id="doctor-password-error" role="alert" className="block break-words text-xs leading-5 font-medium text-rose-700">{passwordError}</span>}</>}</label>)}
             <label className="space-y-1 text-sm"><span>Chuyên khoa</span><select value={form.specialty_id} onChange={(event)=>setForm({...form,specialty_id:event.target.value})} className="w-full rounded-lg border border-slate-300 px-3 py-2"><option value="">Chưa phân công</option>{specialties.filter((item)=>item.is_active).map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
             <label className="space-y-1 text-sm"><span>Phòng khám</span><select value={form.room_id} onChange={(event)=>setForm({...form,room_id:event.target.value})} className="w-full rounded-lg border border-slate-300 px-3 py-2"><option value="">Chưa phân công</option>{rooms.filter((item)=>item.is_active).map((item)=><option key={item.id} value={item.id}>{item.name} ({item.room_number})</option>)}</select></label>
             <label className="space-y-1 text-sm sm:col-span-2"><span>Giới thiệu</span><textarea value={form.bio} onChange={(event)=>setForm({...form,bio:event.target.value})} className="w-full rounded-lg border border-slate-300 px-3 py-2" rows={3} /></label>

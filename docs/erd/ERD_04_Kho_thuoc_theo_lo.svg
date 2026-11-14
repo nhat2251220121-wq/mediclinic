@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="1150" viewBox="0 0 2200 1150">
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#77938e"/></marker></defs>
+<rect width="100%" height="100%" fill="#f4f7f6"/>
+<text x="42" y="52" font-family="Arial,sans-serif" font-size="31" font-weight="700" fill="#193b38">ERD MediClinic · Tồn kho theo lô</text>
+<text x="44" y="82" font-family="Arial,sans-serif" font-size="17" font-weight="400" fill="#536b67">Đường liền: FK thật. Đường đứt: code dùng cột như liên kết nhưng schema không khai báo FK.</text>
+<line x1="42" y1="101" x2="2158" y2="101" stroke="#cad8d5" stroke-width="2"/>
+<polyline points="460,280 600,280 600,291 730,291" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="520" y="266" font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#536b67">drug_id · 1:N</text>
+<polyline points="1180,260 1250,260 1250,562 1430,562" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="1190" y="246" font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#536b67">batch_id · 1:N</text>
+<polyline points="460,770 620,770 620,477 730,477" fill="none" stroke="#77938e" stroke-width="2.5" marker-end="url(#arrow)"/>
+<text x="470" y="757" font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#536b67">created_by → users.id · 1:N</text>
+<polyline points="460,280 500,280 500,940 1390,940 1390,531 1430,531" fill="none" stroke="#9a6414" stroke-width="2.5" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<text x="700" y="927" font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#536b67">drug_id · logic · 1:N</text>
+<polyline points="460,770 570,770 570,1030 1400,1030 1400,748 1430,748" fill="none" stroke="#9a6414" stroke-width="2.5" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<text x="700" y="1017" font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#536b67">performed_by · logic · 1:N</text>
+<rect x="40" y="200" width="420" height="283" rx="14" fill="#ffffff" stroke="#cad8d5" stroke-width="2"/>
+<path d="M54 200 H446 Q460 200 460 214 V254 H40 V214 Q40 200 54 200" fill="#286b63"/>
+<text x="56" y="235" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#ffffff">drugs</text>
+<rect x="53" y="263" width="31" height="22" rx="5" fill="#176b55" stroke="#176b55"/>
+<text x="57" y="280" font-family="Arial,sans-serif" font-size="12" font-weight="700" fill="#ffffff">PK</text>
+<text x="93" y="280" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">drug_id INT</text>
+<rect x="53" y="294" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91"/>
+<text x="57" y="311" font-family="Arial,sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="93" y="311" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">unit_id INT NULL</text>
+<text x="57" y="342" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">name VARCHAR(150)</text>
+<text x="57" y="373" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">price DECIMAL(10,2)</text>
+<text x="57" y="404" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">stock_quantity INT</text>
+<text x="57" y="435" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">low_stock_threshold INT UNSIGNED</text>
+<text x="57" y="466" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">is_active BOOLEAN</text>
+<rect x="40" y="690" width="420" height="190" rx="14" fill="#ffffff" stroke="#cad8d5" stroke-width="2"/>
+<path d="M54 690 H446 Q460 690 460 704 V744 H40 V704 Q40 690 54 690" fill="#286b63"/>
+<text x="56" y="725" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#ffffff">users</text>
+<rect x="53" y="753" width="31" height="22" rx="5" fill="#176b55" stroke="#176b55"/>
+<text x="57" y="770" font-family="Arial,sans-serif" font-size="12" font-weight="700" fill="#ffffff">PK</text>
+<text x="93" y="770" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">id INT</text>
+<text x="57" y="801" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">full_name VARCHAR(150)</text>
+<text x="57" y="832" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">role ENUM</text>
+<text x="57" y="863" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">phone VARCHAR(20)</text>
+<rect x="730" y="180" width="450" height="314" rx="14" fill="#ffffff" stroke="#cad8d5" stroke-width="2"/>
+<path d="M744 180 H1166 Q1180 180 1180 194 V234 H730 V194 Q730 180 744 180" fill="#286b63"/>
+<text x="746" y="215" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#ffffff">drug_batches</text>
+<rect x="743" y="243" width="31" height="22" rx="5" fill="#176b55" stroke="#176b55"/>
+<text x="747" y="260" font-family="Arial,sans-serif" font-size="12" font-weight="700" fill="#ffffff">PK</text>
+<text x="783" y="260" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">batch_id BIGINT UNSIGNED</text>
+<rect x="743" y="274" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91"/>
+<text x="747" y="291" font-family="Arial,sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="783" y="291" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">drug_id INT</text>
+<text x="747" y="322" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">batch_code VARCHAR(100) NULL</text>
+<text x="747" y="353" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">quantity_received INT UNSIGNED</text>
+<text x="747" y="384" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">quantity_remaining INT UNSIGNED</text>
+<text x="747" y="415" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">received_on DATE</text>
+<text x="747" y="446" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">expires_on DATE</text>
+<rect x="743" y="460" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91"/>
+<text x="747" y="477" font-family="Arial,sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="783" y="477" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">created_by INT NULL</text>
+<rect x="1430" y="420" width="500" height="376" rx="14" fill="#ffffff" stroke="#cad8d5" stroke-width="2"/>
+<path d="M1444 420 H1916 Q1930 420 1930 434 V474 H1430 V434 Q1430 420 1444 420" fill="#286b63"/>
+<text x="1446" y="455" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#ffffff">stock_movements</text>
+<rect x="1443" y="483" width="31" height="22" rx="5" fill="#176b55" stroke="#176b55"/>
+<text x="1447" y="500" font-family="Arial,sans-serif" font-size="12" font-weight="700" fill="#ffffff">PK</text>
+<text x="1483" y="500" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">id BIGINT UNSIGNED</text>
+<text x="1447" y="531" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">drug_id INT · no FK</text>
+<rect x="1443" y="545" width="31" height="22" rx="5" fill="#145f91" stroke="#145f91"/>
+<text x="1447" y="562" font-family="Arial,sans-serif" font-size="12" font-weight="700" fill="#ffffff">FK</text>
+<text x="1483" y="562" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">batch_id BIGINT UNSIGNED NULL</text>
+<text x="1447" y="593" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">quantity_delta INT</text>
+<text x="1447" y="624" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">reason VARCHAR(100)</text>
+<text x="1447" y="655" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">note VARCHAR(255)</text>
+<text x="1447" y="686" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">reference_type VARCHAR(40)</text>
+<text x="1447" y="717" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">reference_id BIGINT</text>
+<text x="1447" y="748" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">performed_by INT · no FK</text>
+<text x="1447" y="779" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#193b38">created_at DATETIME</text>
+<rect x="730" y="530" width="450" height="148" rx="12" fill="#fff8e9" stroke="#e6cf9c" stroke-width="2"/>
+<text x="746" y="560" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#193b38">Cách đọc tồn kho</text>
+<text x="746" y="590" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#536b67">drug_batches dùng chính xác: batch_id, batch_code,</text>
+<text x="746" y="615" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#536b67">quantity_received, quantity_remaining, received_on, expires_on.</text>
+<text x="746" y="640" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#536b67">drugs.stock_quantity là cột lưu thường, không generated;</text>
+<text x="746" y="665" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#536b67">ứng dụng duy trì tồn tổng và đối chiếu tồn đã gắn lô.</text>
+<rect x="1430" y="820" width="650" height="148" rx="12" fill="#fff8e9" stroke="#e6cf9c" stroke-width="2"/>
+<text x="1446" y="850" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#193b38">Liên kết logic không phải FK</text>
+<text x="1446" y="880" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#536b67">stock_movements.drug_id → drugs.drug_id: không có FK.</text>
+<text x="1446" y="905" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#536b67">reference_type/reference_id là tham chiếu đa hình; code có</text>
+<text x="1446" y="930" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#536b67">dùng reference_type = PRESCRIPTION.</text>
+<text x="1446" y="955" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#536b67">performed_by → users.id: không có FK.</text>
+</svg>

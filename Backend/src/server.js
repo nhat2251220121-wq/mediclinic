@@ -5,7 +5,6 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const { Server } = require('socket.io');
 const { testConnection } = require('./config/db');
-const runMigrations = require('../database/migrate');
 const routes = require('./routes');
 const { errorHandler, notFoundHandler } = require('./middlewares/errorHandler');
 
@@ -63,18 +62,37 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 // Khởi chạy server
-const startServer = async () => {
-    // Kiểm tra kết nối MySQL
-    await testConnection();
-    await runMigrations();
+const startServer = async ({ databaseCheck = testConnection, httpServer = server, port = PORT, logger = console } = {}) => {
+    await databaseCheck();
 
-    server.listen(PORT, () => {
-        console.log(`=======================================================`);
-        console.log(`🏥 MediClinic Backend Server running on port: ${PORT}`);
-        console.log(`🌐 Base API URL: http://localhost:${PORT}/api`);
-        console.log(`⚡ Socket.IO Server active on port: ${PORT}`);
-        console.log(`=======================================================`);
+    return new Promise((resolve, reject) => {
+        httpServer.once?.('error', reject);
+        httpServer.listen(port, () => {
+            logger.log('=======================================================');
+            logger.log(`🏥 MediClinic Backend Server running on port: ${port}`);
+            logger.log(`🌐 Base API URL: http://localhost:${port}/api`);
+            logger.log(`⚡ Socket.IO Server active on port: ${port}`);
+            logger.log('=======================================================');
+            resolve(httpServer);
+        });
     });
 };
 
-startServer();
+const handleStartupFailure = async (error, { logger = console, closePool = () => pool.end() } = {}) => {
+    const safeCode = ['ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'EHOSTUNREACH', 'EACCES', 'PROTOCOL_CONNECTION_LOST', 'ER_ACCESS_DENIED_ERROR', 'DB_CONNECTION_FAILED'].includes(error?.code)
+        ? error.code
+        : 'STARTUP_FAILED';
+    logger.error(`❌ [Startup] Backend khởi động thất bại (${safeCode}); tiến trình sẽ thoát với mã lỗi.`);
+    try {
+        await closePool();
+    } catch {
+        // Preserve the startup failure as the process exit reason.
+    }
+    process.exitCode = 1;
+};
+
+if (require.main === module) {
+    startServer().catch((error) => handleStartupFailure(error));
+}
+
+module.exports = { app, server, startServer, handleStartupFailure };

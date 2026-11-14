@@ -41,10 +41,13 @@ const MedicineMgmt = () => {
   const [drugs, setDrugs] = useState([]);
   const [units, setUnits] = useState([]);
   const [mealRelations, setMealRelations] = useState([]);
+  const [icdCodes, setIcdCodes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [mealRelationsLoading, setMealRelationsLoading] = useState(false);
+  const [icdLoading, setIcdLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [relationSearch, setRelationSearch] = useState('');
+  const [icdSearch, setIcdSearch] = useState('');
   const [pendingDeleteId, setPendingDeleteId] = useState(null);
   const [pendingRelationId, setPendingRelationId] = useState(null);
   const [actionNotice, setActionNotice] = useState(null);
@@ -72,10 +75,16 @@ const MedicineMgmt = () => {
   const [isMealRelationModalOpen, setIsMealRelationModalOpen] = useState(false);
   const [editingMealRelation, setEditingMealRelation] = useState(null);
   const [mealRelationForm, setMealRelationForm] = useState({ name: '', description: '' });
+  const [isIcdModalOpen, setIsIcdModalOpen] = useState(false);
+  const [editingIcdCode, setEditingIcdCode] = useState(null);
+  const [icdForm, setIcdForm] = useState({ code: '', description: '' });
+  const [icdFormError, setIcdFormError] = useState('');
+  const [icdSaving, setIcdSaving] = useState(false);
 
   useEffect(() => {
     fetchMedicines();
     fetchMealRelations();
+    fetchIcdCodes();
     axiosClient.get('/admin/medicine-units').then((response) => setUnits(response.data || [])).catch(() => setUnits([]));
   }, []);
 
@@ -105,6 +114,48 @@ const MedicineMgmt = () => {
     } finally {
       setMealRelationsLoading(false);
     }
+  };
+
+  const fetchIcdCodes = async () => {
+    setIcdLoading(true);
+    try {
+      const response = await axiosClient.get('/admin/icd10-codes');
+      setIcdCodes(response.data || []);
+    } catch (err) {
+      setActionNotice({ type: 'error', message: err.message || 'Không tải được danh mục mã ICD-10.' });
+    } finally { setIcdLoading(false); }
+  };
+
+  const openCreateIcdModal = () => {
+    setEditingIcdCode(null);
+    setIcdForm({ code: '', description: '' });
+    setIcdFormError('');
+    setIsIcdModalOpen(true);
+  };
+
+  const openEditIcdModal = (entry) => {
+    setEditingIcdCode(entry.code);
+    setIcdForm({ code: entry.code, description: entry.description || '' });
+    setIcdFormError('');
+    setIsIcdModalOpen(true);
+  };
+
+  const saveIcdCode = async (event) => {
+    event.preventDefault();
+    setIcdFormError('');
+    setIcdSaving(true);
+    try {
+      if (editingIcdCode) {
+        await axiosClient.put(`/admin/icd10-codes/${encodeURIComponent(editingIcdCode)}`, { description: icdForm.description });
+      } else {
+        await axiosClient.post('/admin/icd10-codes', icdForm);
+      }
+      setIsIcdModalOpen(false);
+      setActionNotice({ type: 'success', message: editingIcdCode ? `Đã cập nhật mô tả mã ${editingIcdCode}.` : `Đã thêm mã ${icdForm.code.trim().toUpperCase()} vào danh mục.` });
+      await fetchIcdCodes();
+    } catch (err) {
+      setIcdFormError(err.message || 'Không lưu được mã ICD-10.');
+    } finally { setIcdSaving(false); }
   };
 
   const openCreateMealRelation = () => {
@@ -253,7 +304,7 @@ const MedicineMgmt = () => {
     <div className="space-y-6 font-sans">
       {actionNotice && <div role="status" className={`rounded-xl border px-4 py-3 text-sm ${actionNotice.type === 'error' ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>{actionNotice.message}</div>}
       <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex bg-slate-100 p-1.5 rounded-2xl text-xs font-bold">
+        <div className="flex flex-wrap bg-slate-100 p-1.5 rounded-2xl text-xs font-bold">
           <button
             onClick={() => setActiveTab('drugs')}
             className={`px-5 py-2.5 rounded-xl transition ${
@@ -268,22 +319,28 @@ const MedicineMgmt = () => {
           >
             Quan hệ bữa ăn
           </button>
+          <button
+            onClick={() => setActiveTab('icd10')}
+            className={`px-5 py-2.5 rounded-xl transition ${activeTab === 'icd10' ? 'bg-white text-sky-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+          >
+            Mã ICD-10
+          </button>
         </div>
 
         <div className="flex items-center gap-2">
           <button
-            onClick={activeTab === 'drugs' ? fetchMedicines : fetchMealRelations}
+            onClick={activeTab === 'drugs' ? fetchMedicines : activeTab === 'mealRelations' ? fetchMealRelations : fetchIcdCodes}
             className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
           >
             <RefreshCw className="w-3.5 h-3.5 text-sky-600" />
             <span>Làm mới</span>
           </button>
           <button
-            onClick={activeTab === 'drugs' ? handleOpenCreateModal : openCreateMealRelation}
+            onClick={activeTab === 'drugs' ? handleOpenCreateModal : activeTab === 'mealRelations' ? openCreateMealRelation : openCreateIcdModal}
             className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>{activeTab === 'drugs' ? '+ Thêm mới thuốc' : '+ Thêm quan hệ bữa ăn'}</span>
+            <span>{activeTab === 'drugs' ? '+ Thêm mới thuốc' : activeTab === 'mealRelations' ? '+ Thêm quan hệ bữa ăn' : '+ Thêm mã ICD-10'}</span>
           </button>
         </div>
       </div>
@@ -369,6 +426,23 @@ const MedicineMgmt = () => {
                 <td className="p-3.5 font-bold text-sky-600">#{relation.relation_id}</td><td className="p-3.5 font-bold text-slate-900">{relation.name}</td><td className="p-3.5 text-slate-600">{relation.description || 'Chưa có mô tả'}</td>
                 <td className="p-3.5">{relation.is_active ? <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-bold text-emerald-700">Đang dùng</span> : <span className="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 font-bold text-slate-600">Đã ngừng</span>}</td>
                 <td className="p-3.5"><div className="flex items-center justify-center gap-1.5"><button title="Sửa" onClick={() => openEditMealRelation(relation)} className="p-1.5 text-sky-600 hover:bg-sky-50 rounded-lg"><Edit className="w-3.5 h-3.5" /></button><button disabled={pendingRelationId === relation.relation_id} title={relation.is_active ? 'Ngừng sử dụng' : 'Kích hoạt lại'} onClick={() => setMealRelationActive(relation)} className={`p-1.5 rounded-lg disabled:opacity-50 ${relation.is_active ? 'text-amber-600 hover:bg-amber-50' : 'text-emerald-600 hover:bg-emerald-50'}`}>{pendingRelationId === relation.relation_id ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : relation.is_active ? <X className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}</button></div></td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>
+      </div>}
+
+      {activeTab === 'icd10' && <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden space-y-4 p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div><h3 className="font-black text-slate-800 text-base">Danh mục mã ICD-10</h3><p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">Bổ sung mã và tên chẩn đoán đã đối chiếu nguồn y tế tin cậy. Bác sĩ sẽ tìm và chọn mã trong form khám; mã đã dùng trong bệnh án không bị xóa khỏi danh mục.</p></div>
+          <div className="relative w-full sm:w-72"><Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" /><input value={icdSearch} onChange={(event) => setIcdSearch(event.target.value)} placeholder="Tìm theo mã hoặc tên chẩn đoán..." className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500" /></div>
+        </div>
+        <div className="overflow-x-auto border border-slate-100 rounded-2xl">
+          <table className="w-full min-w-[620px] text-left text-sm">
+            <thead><tr className="bg-slate-50 text-slate-500 text-xs uppercase font-bold border-b border-slate-100"><th className="p-3.5 w-40">Mã ICD-10</th><th className="p-3.5">Tên chẩn đoán trong danh mục</th><th className="p-3.5 w-28 text-center">Thao tác</th></tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {icdLoading ? <tr><td colSpan="3" className="text-center py-10 text-slate-400">Đang tải danh mục mã ICD-10...</td></tr> : icdCodes.filter((entry) => `${entry.code} ${entry.description || ''}`.toLocaleLowerCase('vi').includes(icdSearch.trim().toLocaleLowerCase('vi'))).length === 0 ? <tr><td colSpan="3" className="text-center py-10 text-slate-500">{icdCodes.length ? 'Không tìm thấy mã phù hợp.' : 'Danh mục chưa có mã ICD-10. Hãy bổ sung từ nguồn đã đối chiếu.'}</td></tr> : icdCodes.filter((entry) => `${entry.code} ${entry.description || ''}`.toLocaleLowerCase('vi').includes(icdSearch.trim().toLocaleLowerCase('vi'))).map((entry) => <tr key={entry.code} className="hover:bg-slate-50/60">
+                <td className="p-3.5 font-bold text-teal-800">{entry.code}</td><td className="p-3.5 text-slate-700"><div>{entry.description}</div>{Number(entry.medical_record_count) > 0 && <p className="mt-1 text-xs text-slate-500">Đã dùng trong {entry.medical_record_count} bệnh án · giữ nguyên tên để bảo toàn lịch sử</p>}</td><td className="p-3.5 text-center"><button type="button" disabled={Number(entry.medical_record_count) > 0} title={Number(entry.medical_record_count) > 0 ? 'Mã đã có trong bệnh án nên không sửa tên để giữ lịch sử' : 'Sửa tên chẩn đoán'} aria-label={`Sửa mô tả mã ${entry.code}`} onClick={() => openEditIcdModal(entry)} className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-sky-700 hover:bg-sky-50 disabled:cursor-not-allowed disabled:text-slate-300"><Edit className="h-4 w-4" /></button></td>
               </tr>)}
             </tbody>
           </table>
@@ -533,6 +607,18 @@ const MedicineMgmt = () => {
             <div className="flex justify-end gap-2 border-t border-slate-100 pt-3"><button type="button" onClick={() => setIsMealRelationModalOpen(false)} className="rounded-xl bg-slate-100 px-4 py-2 font-bold text-slate-600 hover:bg-slate-200">Hủy</button><button type="submit" className="inline-flex items-center gap-1 rounded-xl bg-sky-600 px-5 py-2 font-bold text-white hover:bg-sky-700"><Save className="h-3.5 w-3.5" />Lưu lựa chọn</button></div>
           </form>
         </div>
+      </div>}
+
+      {isIcdModalOpen && <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4">
+        <button type="button" aria-label="Đóng biểu mẫu" onClick={() => setIsIcdModalOpen(false)} className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" />
+        <form onSubmit={saveIcdCode} className="relative z-10 my-auto w-full max-w-lg space-y-4 rounded-2xl border border-slate-100 bg-white p-5 shadow-2xl sm:p-6">
+          <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3"><div><h3 className="text-base font-black text-slate-800">{editingIcdCode ? 'Cập nhật mã ICD-10' : 'Bổ sung mã ICD-10'}</h3><p className="mt-1 text-xs leading-5 text-slate-500">Chỉ nhập mã và tên chẩn đoán đã xác minh theo danh mục tin cậy.</p></div><button type="button" onClick={() => setIsIcdModalOpen(false)} aria-label="Đóng" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button></div>
+          {icdFormError && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{icdFormError}</p>}
+          <label className="block text-sm"><span className="font-semibold text-slate-700">Mã ICD-10 *</span><input required maxLength={50} pattern="[A-Za-z][0-9][A-Za-z0-9]([.][A-Za-z0-9]{1,4})?" title="Ví dụ định dạng: H66, J00 hoặc Z01.8" disabled={Boolean(editingIcdCode)} value={icdForm.code} onChange={(event) => setIcdForm({ ...icdForm, code: event.target.value })} placeholder="Ví dụ: H66, J00 hoặc Z01.8" className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 p-3 uppercase disabled:cursor-not-allowed disabled:bg-slate-100" />{editingIcdCode && <span className="mt-1 block text-xs text-slate-500">Mã không sửa được để giữ nguyên liên kết với bệnh án đã lưu.</span>}</label>
+          <label className="block text-sm"><span className="font-semibold text-slate-700">Tên chẩn đoán *</span><textarea required maxLength={2000} rows={3} value={icdForm.description} onChange={(event) => setIcdForm({ ...icdForm, description: event.target.value })} placeholder="Nhập tên chẩn đoán đúng theo danh mục ICD-10 đã đối chiếu" className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 p-3" /></label>
+          <p className="rounded-lg bg-amber-50 p-3 text-xs leading-5 text-amber-900">Định dạng hợp lệ không đồng nghĩa mã đã được xác nhận về chuyên môn. Không tự suy mã từ chẩn đoán; hãy đối chiếu nguồn trước khi lưu.</p>
+          <div className="flex justify-end gap-2 border-t border-slate-100 pt-3"><button type="button" onClick={() => setIsIcdModalOpen(false)} className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-200">Hủy</button><button type="submit" disabled={icdSaving} className="inline-flex items-center gap-2 rounded-xl bg-teal-800 px-5 py-2.5 text-sm font-bold text-white hover:bg-teal-900 disabled:opacity-60">{icdSaving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{icdSaving ? 'Đang lưu...' : 'Lưu mã ICD-10'}</button></div>
+        </form>
       </div>}
     </div>
   );

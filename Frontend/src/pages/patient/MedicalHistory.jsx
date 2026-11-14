@@ -4,7 +4,7 @@ import axiosClient from '../../api/axiosClient';
 import PaymentModal from '../../components/common/PaymentModal';
 import StatusBadge from '../../components/common/StatusBadge';
 import { socket } from '../../api/socket';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Eye, Calendar, Clock, Stethoscope, Pill, X, Heart, Activity, FileText, Download, ChevronLeft, ChevronRight, QrCode, RefreshCw, Check } from 'lucide-react';
 
 const minutesUntilAppointment = (appointmentDate, timeSlot) => {
@@ -26,14 +26,29 @@ const cancellationStatusText = (request) => {
   return 'Đã duyệt';
 };
 
+// Chỉ cho thanh toán bổ sung từ lịch sử sau khi khám xong và phát sinh tiền thuốc
+// do phòng khám cấp. Phí dịch vụ được thanh toán theo luồng đặt lịch.
+const canPayClinicMedicationBalance = (item) => {
+  const invoice = item?.invoice;
+  if (!invoice || item.status !== 'COMPLETED' || invoice.invoice_status !== 'ACTIVE') return false;
+  const serviceFee = Number(invoice.service_fee || 0);
+  const medicineFee = Number(invoice.medicine_fee || 0);
+  const amountPaid = Number(invoice.amount_paid || 0);
+  const amountDue = Number(invoice.amount_due || 0);
+  return medicineFee > 0 && amountDue > 0 && amountPaid >= serviceFee;
+};
+
 const MedicalHistory = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [appointments, setAppointments] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [medicalRecords, setMedicalRecords] = useState([]);
+  const [followUps, setFollowUps] = useState([]);
   const [cancellationRequests, setCancellationRequests] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadErrors, setLoadErrors] = useState([]);
   const [cancellationModalItem, setCancellationModalItem] = useState(null);
   const [bankDetailsRequestId, setBankDetailsRequestId] = useState(null);
   const [cancellationReason, setCancellationReason] = useState('');
@@ -76,23 +91,27 @@ const MedicalHistory = () => {
 
   const fetchData = async () => {
     setLoading(true);
-    try {
-      const [appRes, invRes, recordRes, cancellationRes] = await Promise.all([
-        axiosClient.get('/appointments'),
-        axiosClient.get('/invoices'),
-        axiosClient.get('/medical-records'),
-        axiosClient.get('/appointments/cancellation-requests/mine')
-      ]);
-
-      if (appRes.success) setAppointments(appRes.data);
-      if (invRes.success) setInvoices(invRes.data);
-      if (recordRes.success) setMedicalRecords(recordRes.data || []);
-      if (cancellationRes.success) setCancellationRequests(cancellationRes.data || []);
-    } catch (err) {
-      console.error('Lỗi tải dữ liệu lịch sử khám:', err);
-    } finally {
-      setLoading(false);
-    }
+    setLoadErrors([]);
+    const requests = [
+      { key: 'appointments', label: 'lịch khám', run: () => axiosClient.get('/appointments'), apply: (data) => setAppointments(data || []) },
+      { key: 'invoices', label: 'hóa đơn', run: () => axiosClient.get('/invoices'), apply: (data) => setInvoices(data || []) },
+      { key: 'records', label: 'bệnh án', run: () => axiosClient.get('/medical-records'), apply: (data) => setMedicalRecords(data || []) },
+      { key: 'followups', label: 'lời hẹn tái khám', run: () => axiosClient.get('/medical-records/follow-ups/mine'), apply: (data) => setFollowUps(data || []) },
+      { key: 'cancellations', label: 'yêu cầu hủy lịch', run: () => axiosClient.get('/appointments/cancellation-requests/mine'), apply: (data) => setCancellationRequests(data || []) }
+    ];
+    const results = await Promise.allSettled(requests.map((request) => request.run()));
+    const errors = [];
+    results.forEach((result, index) => {
+      const request = requests[index];
+      if (result.status === 'fulfilled' && result.value?.success) {
+        request.apply(result.value.data);
+        return;
+      }
+      const status = result.status === 'rejected' ? result.reason?.response?.status : null;
+      errors.push({ key: request.key, label: request.label, status });
+    });
+    setLoadErrors(errors);
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -106,14 +125,30 @@ const MedicalHistory = () => {
     const matchedInv = invoices.find(inv => inv.appointment_id === app.id || inv.appointment_id === app.appointment_id);
     const appointmentId = Number(app.appointment_id || app.id);
     const cancellation = cancellationRequests.find((request) => Number(request.appointment_id) === appointmentId) || null;
+    const medicalRecord = medicalRecords.find((record) => Number(record.appointment_id) === Number(app.appointment_id || app.id)) || null;
+    const followUp = medicalRecord ? followUps.find((item) => Number(item.record_id) === Number(medicalRecord.record_id)) || null : null;
     return {
       ...app,
       invoice: matchedInv || null,
-      medicalRecord: medicalRecords.find((record) => Number(record.appointment_id) === Number(app.appointment_id || app.id)) || null,
+      medicalRecord,
+      followUp,
       cancellation,
       isPaid: Boolean(matchedInv && Number(matchedInv.amount_due) <= 0 && matchedInv.payment_status === 'PAID')
     };
   });
+
+  const followUpSummary = (item) => {
+    const followUp = item.followUp;
+    if (!followUp) return null;
+    if (followUp.follow_up_status === 'COMPLETED') return <span className="text-emerald-700">Đã tái khám</span>;
+    if (followUp.follow_up_status === 'DATA_ISSUE') return <span className="text-amber-800">Lời hẹn có dữ liệu cần phòng khám đối soát</span>;
+    if (followUp.follow_up_status === 'BOOKED') return <span className="text-sky-800">Đã đặt lịch {followUp.active_appointment_date} · {followUp.active_time_slot} · {followUp.active_doctor_name || ''} ({followUp.active_appointment_status === 'CONFIRMED' ? 'đã xác nhận' : 'chờ xác nhận'})</span>;
+    if (followUp.latest_appointment_status === 'NO_SHOW') return <span className="text-amber-800">Lịch trước đã vắng mặt · có thể đặt lại</span>;
+    if (followUp.latest_appointment_status === 'CANCELLED') return <span className="text-slate-600">Lịch trước đã hủy · có thể đặt lại</span>;
+    return <span className="text-slate-600">Ngày bác sĩ đề xuất: {followUp.follow_up_date}</span>;
+  };
+
+  const bookFollowUp = (followUp) => navigate(`/patient/booking?follow_up_id=${encodeURIComponent(followUp.follow_up_id)}`);
 
   useEffect(() => {
     const appointmentId = new URLSearchParams(location.search).get('appointmentId');
@@ -200,7 +235,7 @@ const MedicalHistory = () => {
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 pb-12 font-sans">
+    <div className="mx-auto w-full min-w-0 max-w-6xl space-y-6 pb-12 font-sans">
       {/* Tiêu đề */}
       <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -211,16 +246,22 @@ const MedicalHistory = () => {
 
         <button
           onClick={fetchData}
+          disabled={loading}
           className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition"
         >
-          <RefreshCw className="w-4 h-4" />
-          <span>Làm mới</span>
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          <span>{loading ? 'Đang tải' : 'Làm mới'}</span>
         </button>
       </div>
 
+      {loadErrors.length > 0 && <div role="alert" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <p className="font-semibold">Một số dữ liệu chưa tải được</p>
+        <ul className="mt-1 list-inside list-disc">{loadErrors.map((error) => <li key={error.key}>Không tải được {error.label}{error.status ? ` (HTTP ${error.status})` : ''}. Lịch khám vẫn được hiển thị nếu tải thành công.</li>)}</ul>
+      </div>}
+
       {/* Bảng Lịch sử khám bệnh */}
       <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto lg:block">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50/80 text-slate-500 uppercase font-bold border-b border-slate-100">
@@ -240,7 +281,7 @@ const MedicalHistory = () => {
                 </tr>
               ) : paginatedHistory.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="text-center py-8 text-slate-400">Chưa có lịch khám nào trong lịch sử.</td>
+                  <td colSpan="7" className="text-center py-8 text-slate-400">{loadErrors.some((error) => error.key === 'appointments') ? 'Chưa thể tải lịch sử khám. Hãy thử làm mới.' : 'Chưa có lịch khám nào trong lịch sử.'}</td>
                 </tr>
               ) : (
                 paginatedHistory.map((item) => (
@@ -249,6 +290,7 @@ const MedicalHistory = () => {
                     <td className="py-4 px-6">
                       <div className="font-semibold text-slate-800">{item.appointment_date}</div>
                       <div className="text-slate-400 text-[11px]">{item.time_slot}</div>
+                      {item.followUp && <div className="mt-2 max-w-xs text-[11px] leading-4">{followUpSummary(item)}{item.followUp.can_book && <button type="button" onClick={() => bookFollowUp(item.followUp)} className="mt-1 inline-flex rounded-lg bg-teal-700 px-2.5 py-1.5 font-semibold text-white hover:bg-teal-800">Đặt lịch tái khám</button>}</div>}
                     </td>
                     <td className="py-4 px-6 font-bold text-slate-800">{item.doctor_name}</td>
                     <td className="py-4 px-6 text-slate-600">{item.room_name || item.room_number || 'Chưa phân công'}</td>
@@ -260,8 +302,11 @@ const MedicalHistory = () => {
                         <div className="text-[11px] text-slate-700">Tổng {Number(item.invoice.total_amount).toLocaleString('vi-VN')}đ · Đã trả {Number(item.invoice.amount_paid).toLocaleString('vi-VN')}đ</div>
                         <div className={`text-[11px] font-semibold ${Number(item.invoice.amount_due) > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>{item.invoice.invoice_status === 'VOID' ? `Còn thiếu tại thời điểm hủy ${Number(item.invoice.amount_due).toLocaleString('vi-VN')}đ` : `Còn thiếu ${Number(item.invoice.amount_due).toLocaleString('vi-VN')}đ`}</div>
                         {item.invoice.invoice_status === 'VOID' && <span className="block text-[11px] font-semibold text-slate-600">Hóa đơn đã hết hiệu lực</span>}
-                        {Number(item.invoice.amount_due) > 0 && item.status !== 'CANCELLED' && item.status !== 'NO_SHOW' && item.invoice.invoice_status !== 'VOID' && <button onClick={() => handleOpenPaymentModal(item)} className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-3 py-1 text-xs font-bold text-white"><QrCode className="h-3.5 w-3.5" />Trả phần còn thiếu</button>}
-                        {item.invoice.cash_requested_at && Number(item.invoice.amount_due) > 0 && <span className="block text-[11px] font-semibold text-amber-700">Tiền mặt tại quầy · đang chờ xác nhận thu</span>}
+                        {canPayClinicMedicationBalance(item) && <button onClick={() => handleOpenPaymentModal(item)} className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-3 py-1 text-xs font-bold text-white"><QrCode className="h-3.5 w-3.5" />Chọn cách thanh toán tiền thuốc</button>}
+                        {Number(item.invoice.amount_due) > 0 && item.status !== 'COMPLETED' && item.invoice.invoice_status === 'ACTIVE' && item.invoice.payment_method === 'CASH' && <span className="block text-[11px] font-semibold text-amber-700">Đã chọn tiền mặt · chờ Admin xác nhận đã thu tại quầy</span>}
+                        {Number(item.invoice.amount_due) > 0 && item.status !== 'COMPLETED' && item.invoice.invoice_status === 'ACTIVE' && item.invoice.payment_method === 'BANK_TRANSFER' && <span className="block text-[11px] font-semibold text-sky-700">Đã chọn QR · chờ SePay xác nhận thanh toán dịch vụ</span>}
+                        {Number(item.invoice.amount_due) > 0 && item.status === 'COMPLETED' && canPayClinicMedicationBalance(item) && <span className="block text-[11px] text-slate-600">{item.invoice.medicine_payment_method === 'CASH' ? 'Tiền thuốc: tiền mặt · chờ Admin xác nhận đã thu' : item.invoice.medicine_payment_method === 'BANK_TRANSFER' ? 'Tiền thuốc: QR · chờ SePay xác nhận' : 'Chưa chọn cách thanh toán tiền thuốc'}</span>}
+                        {Number(item.invoice.amount_due) > 0 && item.status === 'COMPLETED' && !canPayClinicMedicationBalance(item) && item.invoice.invoice_status === 'ACTIVE' && <span className="block text-[11px] text-amber-700">Khoản còn thiếu chưa phải tiền thuốc đủ điều kiện thanh toán trong lịch sử. Vui lòng liên hệ quầy để đối soát.</span>}
                         {item.status === 'CANCELLED' && <span className="text-[11px] font-semibold text-amber-700">Lịch đã hủy · khoản thu gốc vẫn được lưu</span>}
                         {item.cancellation && <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-700">
                           <strong>{cancellationStatusText(item.cancellation)}</strong>
@@ -293,6 +338,34 @@ const MedicalHistory = () => {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="divide-y divide-slate-100 lg:hidden">
+          {loading ? <p className="p-6 text-center text-sm text-slate-500">Đang tải lịch sử khám bệnh...</p> : paginatedHistory.length === 0 ? <p className="p-6 text-center text-sm text-slate-500">{loadErrors.some((error) => error.key === 'appointments') ? 'Chưa thể tải lịch sử khám. Hãy thử làm mới.' : 'Chưa có lịch khám nào trong lịch sử.'}</p> : paginatedHistory.map((item) => (
+            <article key={`mobile-${item.id}`} className="min-w-0 space-y-3 p-4">
+              <header className="flex min-w-0 items-start justify-between gap-3">
+                <div className="min-w-0"><span id={`appointment-${item.appointment_id || item.id}`} /><span id={item.invoice?.id ? `invoice-${item.invoice.id}` : undefined} /><p className="text-xs font-semibold text-teal-800">Lịch khám #{item.id}</p><h3 className="mt-1 break-words font-semibold text-slate-900">{item.appointment_date} · {item.time_slot}</h3><p className="mt-1 break-words text-sm text-slate-700">{item.doctor_name}</p><p className="break-words text-xs text-slate-500">{item.room_name || item.room_number || 'Chưa phân công'}</p></div>
+                <div className="shrink-0"><StatusBadge status={item.status} type="appointment" /></div>
+              </header>
+              {item.followUp && <div className="space-y-2 rounded-xl border border-teal-100 bg-teal-50/60 p-3 text-xs"><p className="font-semibold text-teal-900">Tái khám dự kiến: {item.followUp.follow_up_date}</p>{item.followUp.instruction && <p className="break-words text-slate-700">{item.followUp.instruction}</p>}<p>{followUpSummary(item)}</p>{item.followUp.can_book && <button type="button" onClick={() => bookFollowUp(item.followUp)} className="min-h-11 w-full rounded-xl bg-teal-700 px-3 py-2 font-semibold text-white">Đặt lịch tái khám</button>}</div>}
+              {item.invoice ? <div className="space-y-2 rounded-xl bg-slate-50 p-3 text-xs">
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1"><span className="text-slate-500">Tổng hóa đơn</span><strong className="text-right tabular-nums">{Number(item.invoice.total_amount).toLocaleString('vi-VN')} ₫</strong><span className="text-slate-500">Đã thu</span><strong className="text-right tabular-nums">{Number(item.invoice.amount_paid).toLocaleString('vi-VN')} ₫</strong><span className="text-slate-500">Còn thiếu</span><strong className={`text-right tabular-nums ${Number(item.invoice.amount_due) > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>{Number(item.invoice.amount_due).toLocaleString('vi-VN')} ₫</strong></div>
+                {item.invoice.invoice_status === 'VOID' && <p className="text-slate-600">Hóa đơn đã hết hiệu lực; số còn thiếu là tại thời điểm hủy.</p>}
+                {canPayClinicMedicationBalance(item) && <button type="button" onClick={() => handleOpenPaymentModal(item)} className="min-h-11 w-full rounded-xl bg-teal-800 px-3 py-2 text-sm font-semibold text-white"><QrCode className="mr-1.5 inline h-4 w-4" />Chọn cách thanh toán tiền thuốc</button>}
+                {Number(item.invoice.amount_due) > 0 && item.status !== 'COMPLETED' && item.invoice.invoice_status === 'ACTIVE' && item.invoice.payment_method === 'CASH' && <p className="text-amber-800">Đã chọn tiền mặt · chờ Admin xác nhận đã thu tại quầy</p>}
+                {Number(item.invoice.amount_due) > 0 && item.status !== 'COMPLETED' && item.invoice.invoice_status === 'ACTIVE' && item.invoice.payment_method === 'BANK_TRANSFER' && <p className="text-sky-800">Đã chọn QR · chờ SePay xác nhận thanh toán dịch vụ</p>}
+                {Number(item.invoice.amount_due) > 0 && item.status === 'COMPLETED' && canPayClinicMedicationBalance(item) && <p className="text-slate-600">{item.invoice.medicine_payment_method === 'CASH' ? 'Tiền thuốc: tiền mặt · chờ Admin xác nhận đã thu' : item.invoice.medicine_payment_method === 'BANK_TRANSFER' ? 'Tiền thuốc: QR · chờ SePay xác nhận' : 'Chưa chọn cách thanh toán tiền thuốc'}</p>}
+                {Number(item.invoice.amount_due) > 0 && item.status === 'COMPLETED' && !canPayClinicMedicationBalance(item) && item.invoice.invoice_status === 'ACTIVE' && <p className="text-amber-800">Khoản còn thiếu chưa phải tiền thuốc đủ điều kiện thanh toán trong lịch sử. Vui lòng liên hệ quầy để đối soát.</p>}
+                {item.status === 'CANCELLED' && <p className="text-amber-800">Lịch đã hủy · khoản thu gốc vẫn được lưu</p>}
+                {item.invoice.payments?.length > 0 && <details><summary className="min-h-11 cursor-pointer py-3 font-semibold text-teal-800">Giao dịch ({item.invoice.payments.length})</summary><div className="space-y-1 break-words">{item.invoice.payments.map((payment) => <p key={payment.payment_id} className="text-slate-600">{payment.payment_method === 'CASH' ? 'Tiền mặt' : 'Chuyển khoản'} · {Number(payment.amount).toLocaleString('vi-VN')} ₫ · {payment.transaction_code || payment.provider} · {new Date(payment.created_at).toLocaleString('vi-VN')}</p>)}</div></details>}
+              </div> : <p className="text-xs text-slate-500">Hóa đơn đang được cập nhật.</p>}
+              {item.cancellation && <details className="rounded-xl border border-slate-200 bg-white px-3"><summary className="min-h-11 cursor-pointer py-3 text-xs font-semibold text-slate-700">{cancellationStatusText(item.cancellation)}</summary><div className="space-y-1 break-words pb-3 text-xs text-slate-600">{(item.cancellation.patient_reason || item.cancellation.clinic_reason) && <p>Lý do: {item.cancellation.patient_reason || item.cancellation.clinic_reason}</p>}{item.cancellation.status === 'REJECTED' && item.cancellation.decision_note && <p className="text-rose-700">Lý do từ chối: {item.cancellation.decision_note}</p>}{item.cancellation.bank_account_masked && <p>Tài khoản nhận hoàn: {item.cancellation.bank_account_masked}</p>}{item.cancellation.refunds?.map((refund) => <p key={refund.id}>{refund.refund_method === 'CASH_COUNTER' ? 'Trả tại quầy' : 'Chuyển khoản'} · {Number(refund.amount).toLocaleString('vi-VN')} ₫ · {refund.status === 'COMPLETED' ? 'Đã hoàn' : 'Chờ hoàn'}{refund.reference_code ? ` · Mã ${refund.reference_code}` : ''}</p>)}</div></details>}
+              <div className="flex flex-wrap gap-2">
+                {['PENDING', 'CONFIRMED'].includes(item.status) && item.cancellation?.status !== 'PENDING' && <button type="button" onClick={() => openCancellation(item)} className="min-h-11 flex-1 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800">Yêu cầu hủy</button>}
+                {item.cancellation?.status === 'APPROVED' && !item.cancellation?.has_bank_details && item.cancellation.refunds?.some((refund) => refund.refund_method === 'BANK_TRANSFER' && refund.status === 'PENDING') && <button type="button" onClick={() => { setBankDetailsRequestId(item.cancellation.id); setRefundAccountName(''); setRefundBankName(''); setRefundAccountNumber(''); setCancellationError(''); }} className="min-h-11 flex-1 rounded-xl border border-teal-300 px-3 py-2 text-sm font-semibold text-teal-800">Cung cấp tài khoản nhận hoàn</button>}
+                <button type="button" onClick={() => setSelectedRecord(item)} className="min-h-11 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Xem chi tiết</button>
+              </div>
+            </article>
+          ))}
         </div>
       </div>
 
@@ -339,7 +412,7 @@ const MedicalHistory = () => {
       {selectedRecord && (
         <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setSelectedRecord(null)}></div>
-          <div className="relative min-w-0 bg-white rounded-3xl max-w-2xl w-full p-4 sm:p-8 shadow-2xl border border-slate-100 z-10 space-y-6">
+          <div className="relative max-h-[calc(100dvh-2rem)] min-w-0 w-full max-w-2xl overflow-y-auto bg-white rounded-3xl p-4 sm:p-8 shadow-2xl border border-slate-100 z-10 space-y-6">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div>
                 <h3 className="text-lg font-black text-slate-800">
@@ -379,7 +452,7 @@ const MedicalHistory = () => {
 
             {selectedRecord.invoice && <section className="patient-invoice-receipt rounded-2xl border border-slate-200 p-4 text-sm">
               <div className="flex items-center justify-between"><h4 className="font-bold">Biên lai / hóa đơn #{selectedRecord.invoice.id}</h4><button type="button" className="patient-receipt-action inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold" onClick={() => window.print()}><Download className="h-3.5 w-3.5" />In biên lai</button></div>
-              <p className="mt-2">Bệnh nhân: {user?.full_name || 'Bệnh nhân'} · Phương thức: {selectedRecord.invoice.payment_method === 'CASH' ? 'Tiền mặt' : 'QR / chuyển khoản'}</p>
+              <p className="mt-2">Bệnh nhân: {user?.full_name || 'Bệnh nhân'} · Phí khám: {selectedRecord.invoice.payment_method === 'CASH' ? 'Tiền mặt' : 'QR / chuyển khoản'}{Number(selectedRecord.invoice.medicine_fee || 0) > 0 ? ` · Tiền thuốc: ${selectedRecord.invoice.medicine_payment_method === 'CASH' ? 'Tiền mặt' : selectedRecord.invoice.medicine_payment_method === 'BANK_TRANSFER' ? 'QR / chuyển khoản' : 'Chưa chọn'}` : ''}</p>
               <div className="mt-2 divide-y">{selectedRecord.invoice.items?.map((line) => <div key={line.id} className="flex justify-between gap-3 py-2"><span>{line.description} · {line.quantity} × {Number(line.unit_price).toLocaleString('vi-VN')}đ</span><strong>{Number(line.line_total).toLocaleString('vi-VN')}đ</strong></div>)}</div>
               <p className="mt-2">Phí dịch vụ {Number(selectedRecord.invoice.service_fee).toLocaleString('vi-VN')}đ · Thuốc {Number(selectedRecord.invoice.medicine_fee).toLocaleString('vi-VN')}đ</p>
               <p className="mt-1 font-bold">Tổng {Number(selectedRecord.invoice.total_amount).toLocaleString('vi-VN')}đ · Đã thu {Number(selectedRecord.invoice.amount_paid).toLocaleString('vi-VN')}đ · Còn thiếu {Number(selectedRecord.invoice.amount_due).toLocaleString('vi-VN')}đ</p>
@@ -405,12 +478,12 @@ const MedicalHistory = () => {
                   <strong className={selectedRecord.isPaid ? 'text-emerald-600 font-bold' : 'text-amber-600 font-bold'}>
                     {selectedRecord.invoice ? `${Number(selectedRecord.invoice.amount_paid).toLocaleString('vi-VN')}đ đã thu · ${Number(selectedRecord.invoice.amount_due).toLocaleString('vi-VN')}đ còn thiếu` : 'Chưa có hóa đơn'}
                   </strong>
-                  {selectedRecord.invoice && <span className="mt-1 block text-slate-600">Phương thức: {selectedRecord.invoice.payment_method === 'CASH' ? 'Tiền mặt' : 'QR / chuyển khoản'}{selectedRecord.invoice.cash_requested_at && !selectedRecord.isPaid ? ' · đang chờ thu tại quầy' : ''}</span>}
+                  {selectedRecord.invoice && <span className="mt-1 block text-slate-600">Phí khám: {selectedRecord.invoice.payment_method === 'CASH' ? 'Tiền mặt' : 'QR / chuyển khoản'}{Number(selectedRecord.invoice.medicine_fee || 0) > 0 ? ` · Tiền thuốc: ${selectedRecord.invoice.medicine_payment_method === 'CASH' ? 'Tiền mặt' : selectedRecord.invoice.medicine_payment_method === 'BANK_TRANSFER' ? 'QR / chuyển khoản' : 'Chưa chọn'}` : ''}{selectedRecord.invoice.cash_requested_at && !selectedRecord.isPaid ? ' · đang chờ thu tại quầy' : ''}</span>}
                 </div>
               </div>
             </div>
 
-            {!selectedRecord.isPaid && selectedRecord.status !== 'CANCELLED' && selectedRecord.status !== 'NO_SHOW' && selectedRecord.invoice?.invoice_status !== 'VOID' && Number(selectedRecord.invoice?.amount_due) > 0 && (
+            {canPayClinicMedicationBalance(selectedRecord) && (
               <button
                 onClick={() => {
                   const rec = selectedRecord;
@@ -420,7 +493,7 @@ const MedicalHistory = () => {
                 className="w-full py-3 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-xl text-xs transition shadow-md shadow-sky-600/30 flex items-center justify-center gap-2"
               >
                 <QrCode className="w-4 h-4" />
-                <span>Thanh toán phần còn thiếu bằng QR</span>
+                <span>Thanh toán tiền thuốc còn thiếu</span>
               </button>
             )}
 
@@ -444,7 +517,13 @@ const MedicalHistory = () => {
           appointmentId={selectedPaymentApp.id}
           patientName={user?.full_name || 'Bệnh nhân'}
           amount={selectedPaymentApp.invoice?.total_amount}
-          initialPaymentMethod={selectedPaymentApp.invoice?.payment_method}
+          paymentPurpose="MEDICINE_BALANCE"
+          initialPaymentMethod={selectedPaymentApp.invoice?.medicine_payment_method}
+          lockedPaymentMethod={selectedPaymentApp.invoice?.medicine_payment_method}
+          onPaymentMethodSelected={(method) => {
+            setSelectedPaymentApp((current) => current ? { ...current, invoice: { ...current.invoice, medicine_payment_method: method } } : current);
+            fetchData();
+          }}
           onSuccess={() => fetchData()}
         />
       )}

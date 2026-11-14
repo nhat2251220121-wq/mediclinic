@@ -1,6 +1,7 @@
 const { pool } = require('../config/db');
 const bcrypt = require('bcryptjs');
 const { stageImage, publishImage, discardImage, deleteStoredImage } = require('../utils/imageStorage');
+const { getClinicClock } = require('../utils/appointmentReminders');
 
 const clinicDateISO = () => new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit'
@@ -163,6 +164,50 @@ const getDashboardStats = async (req, res, next) => {
     } catch (error) {
         next(error);
     }
+};
+
+/**
+ * GET /api/admin/appointment-reminders
+ * Read-only list of confirmed, service-paid appointments today that are due within 60 minutes or overdue.
+ */
+const getAppointmentReminders = async (req, res, next) => {
+    try {
+        const { date: clinicDate, dateTime: clinicDateTime } = getClinicClock();
+        const appointmentStart = `TIMESTAMP(a.appointment_date, STR_TO_DATE(TRIM(SUBSTRING_INDEX(REPLACE(REPLACE(a.time_slot, '–', '-'), '—', '-'), '-', 1)), '%H:%i'))`;
+        const [rows] = await pool.query(
+            `SELECT a.appointment_id, DATE_FORMAT(a.appointment_date, '%Y-%m-%d') AS appointment_date,
+                    a.time_slot, a.status, p.full_name AS patient_name,
+                    du.full_name AS doctor_name, COALESCE(s.name, svc.name, 'Chưa phân chuyên khoa') AS service_or_specialty,
+                    TIMESTAMPDIFF(MINUTE, ?, ${appointmentStart}) AS minutes_until,
+                    COUNT(*) OVER() AS reminder_total
+             FROM appointments a
+             JOIN users p ON p.id = a.patient_id
+             JOIN doctors d ON d.id = a.doctor_id
+             JOIN users du ON du.id = d.user_id
+             LEFT JOIN specialties s ON s.id = d.specialty_id
+             LEFT JOIN services svc ON svc.id = a.service_id
+             JOIN invoices i ON i.appointment_id = a.appointment_id AND i.invoice_status = 'ACTIVE'
+             WHERE a.appointment_date = ?
+               AND a.status = 'CONFIRMED'
+               AND COALESCE((SELECT SUM(pay.amount) FROM payments pay WHERE pay.invoice_id = i.id AND pay.payment_status = 'PAID'), 0) >= i.service_fee
+               AND ${appointmentStart} <= DATE_ADD(?, INTERVAL 60 MINUTE)
+             ORDER BY CASE WHEN ${appointmentStart} <= ? THEN 0 ELSE 1 END ASC,
+                      CASE WHEN ${appointmentStart} <= ? THEN ${appointmentStart} END DESC,
+                      CASE WHEN ${appointmentStart} > ? THEN ${appointmentStart} END ASC
+             LIMIT 5`,
+            [clinicDateTime, clinicDate, clinicDateTime, clinicDateTime, clinicDateTime, clinicDateTime]
+        );
+        return res.json({
+            success: true,
+            data: {
+                clinic_date: clinicDate,
+                as_of: clinicDateTime,
+                total: Number(rows[0]?.reminder_total || 0),
+                check_in_tracking: false,
+                items: rows.map(({ reminder_total, ...item }) => ({ ...item, minutes_until: Number(item.minutes_until) }))
+            }
+        });
+    } catch (error) { return next(error); }
 };
 
 /**
@@ -529,6 +574,58 @@ const updateMealRelation = async (req, res, next) => {
 
 const deactivateMealRelation = async (req, res, next) => {
     return deactivateCatalogRecord(req, res, next, { table: 'meal_relations', idColumn: 'relation_id', message: 'Đã ngừng sử dụng quan hệ bữa ăn. Đơn thuốc cũ vẫn được giữ nguyên.', alreadyMessage: 'Quan hệ bữa ăn đã được ngừng sử dụng trước đó.' });
+};
+
+const normalizeIcd10Entry = (code, description) => {
+    const cleanCode = typeof code === 'string' ? code.trim().toUpperCase() : '';
+    const cleanDescription = typeof description === 'string' ? description.trim() : '';
+    // ICD-10 category/subcategory format; code is immutable after creation because
+    // appointment_records may already reference it through a foreign key.
+    if (!/^[A-Z][0-9][A-Z0-9](?:[.][A-Z0-9]{1,4})?$/.test(cleanCode)) return null;
+    if (!cleanDescription || cleanDescription.length > 2000) return null;
+    return { code: cleanCode, description: cleanDescription };
+};
+
+const getIcd10Codes = async (req, res, next) => {
+    try {
+        const [rows] = await pool.query(`
+            SELECT icd.code, icd.description,
+                   (SELECT COUNT(*) FROM appointment_records record WHERE record.icd10_code = icd.code) AS medical_record_count
+            FROM icd10_codes icd
+            ORDER BY icd.code
+        `);
+        return res.json({ success: true, data: rows });
+    } catch (error) { next(error); }
+};
+
+const createIcd10Code = async (req, res, next) => {
+    try {
+        const entry = normalizeIcd10Entry(req.body.code, req.body.description);
+        if (!entry) return res.status(400).json({ success: false, message: 'Mã ICD-10 hoặc tên chẩn đoán không hợp lệ. Hãy nhập mã đúng định dạng và tên bệnh đã đối chiếu nguồn tin cậy.' });
+        await pool.query('INSERT INTO icd10_codes (code, description) VALUES (?, ?)', [entry.code, entry.description]);
+        return res.status(201).json({ success: true, message: 'Đã thêm mã ICD-10 vào danh mục.', data: entry });
+    } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ success: false, message: 'Mã ICD-10 này đã có trong danh mục.' });
+        return next(error);
+    }
+};
+
+const updateIcd10Code = async (req, res, next) => {
+    try {
+        const code = typeof req.params.code === 'string' ? req.params.code.trim().toUpperCase() : '';
+        const description = typeof req.body.description === 'string' ? req.body.description.trim() : '';
+        if (!/^[A-Z][0-9][A-Z0-9](?:[.][A-Z0-9]{1,4})?$/.test(code) || !description || description.length > 2000) {
+            return res.status(400).json({ success: false, message: 'Tên chẩn đoán chưa hợp lệ.' });
+        }
+        const [existing] = await pool.query('SELECT code FROM icd10_codes WHERE code = ? LIMIT 1', [code]);
+        if (!existing.length) return res.status(404).json({ success: false, message: 'Không tìm thấy mã ICD-10.' });
+        const [references] = await pool.query('SELECT COUNT(*) AS usage_count FROM appointment_records WHERE icd10_code = ?', [code]);
+        if (Number(references[0]?.usage_count) > 0) {
+            return res.status(409).json({ success: false, message: 'Mã này đã được dùng trong bệnh án nên không thể sửa tên chẩn đoán, nhằm giữ nguyên nội dung lịch sử.' });
+        }
+        await pool.query('UPDATE icd10_codes SET description = ? WHERE code = ?', [description, code]);
+        return res.json({ success: true, message: 'Đã cập nhật tên chẩn đoán.', data: { code, description } });
+    } catch (error) { next(error); }
 };
 
 /**
@@ -1041,9 +1138,11 @@ const updatePatient = async (req, res, next) => {
 
 module.exports = {
     getDashboardStats,
+    getAppointmentReminders,
     getMedicines, getMedicineUnits, createMedicine, updateMedicine, deleteMedicine, reactivateMedicine,
     getMedicineLots, receiveMedicineBatch, classifyLegacyMedicineStock, changeMedicineBatchStock, writeOffMedicineBatch,
     getMealRelations, createMealRelation, updateMealRelation, deactivateMealRelation,
+    getIcd10Codes, createIcd10Code, updateIcd10Code,
     getSpecialties, createSpecialty, updateSpecialty, deleteSpecialty,
     getRooms, createRoom, updateRoom, deleteRoom,
     getServices, createService, updateService, deleteService, uploadServiceImage, removeServiceImage, uploadDoctorAvatar, removeDoctorAvatar,

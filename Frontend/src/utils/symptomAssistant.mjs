@@ -14,6 +14,18 @@ const normalizeMessage = (value) => String(value || '')
   .replace(/đ/g, 'd')
   .toLowerCase();
 
+export const getPatientChatIntent = (message) => {
+  const text = normalizeMessage(message);
+  const asksDoctor = text.includes('bac si');
+  if ((text.includes('chi tiet') && /(buoi kham|lan kham|kham|ho so|benh an)/.test(text))
+    || text.includes('benh an') || text.includes('don thuoc') || text.includes('ket qua kham')) return 'VISIT_DETAIL';
+  if (asksDoctor && (text.includes('lich') || text.includes('ca kham') || text.includes('lam viec'))) return 'DOCTOR_SCHEDULE';
+  if (asksDoctor && /(thong tin|ho so|gioi thieu|la ai)/.test(text)) return 'DOCTOR_PROFILE';
+  if ((text.includes('lich kham') || text.includes('buoi kham'))
+    && /(toi|cua toi|cua minh|ngay nao|buoi nao|co lich|lich cua)/.test(text)) return 'MY_APPOINTMENTS';
+  return null;
+};
+
 export const getAssistantNavigationIntent = (message, isAuthenticated = false) => {
   const text = normalizeMessage(message);
   const asksPersonalSchedule = (text.includes('lich') && text.includes('kham') && (
@@ -44,6 +56,20 @@ export const getAssistantNavigationIntent = (message, isAuthenticated = false) =
   return null;
 };
 
+export const isServiceAdviceIntent = (message) => {
+  const text = normalizeMessage(message);
+  return ['dich vu', 'gia', 'chi phi', 'bao nhieu', 'kham gi', 'kham khoa nao']
+    .some((phrase) => text.includes(phrase));
+};
+
+export const isDirectServiceLookupIntent = (message) => {
+  return isServiceAdviceIntent(message);
+};
+
+export const shouldRequestServiceAdvice = (_question, result) => Boolean(
+  result && result.urgency_level !== 'EMERGENCY'
+);
+
 export const formatSymptomReply = (result) => {
   if (result?.urgency_level === 'EMERGENCY') {
     return `${result.urgency_text} ${result.initial_advice}`.trim();
@@ -62,4 +88,11 @@ export const formatSymptomReply = (result) => {
     .filter(Boolean)
     .join(' ')
     .concat(questionBlock);
+};
+
+export const formatMatchedServiceReply = (result) => {
+  if (result?.predicted_specialty) {
+    return `${formatSymptomReply(result)}\n\nDịch vụ phù hợp theo danh mục:`;
+  }
+  return 'Trong danh mục đang hoạt động, dịch vụ sau có thể phù hợp với mô tả của bạn:';
 };

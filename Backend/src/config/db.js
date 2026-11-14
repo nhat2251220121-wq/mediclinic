@@ -3,6 +3,14 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
+const assertDatabaseNameConfigured = (environment = process.env.NODE_ENV, databaseName = process.env.DB_NAME) => {
+    if (environment === 'production' && !String(databaseName || '').trim()) {
+        throw new Error('DB_NAME must be explicitly configured in production.');
+    }
+};
+
+assertDatabaseNameConfigured();
+
 // Khởi tạo Connection Pool cho MySQL
 const pool = mysql.createPool({
     host: process.env.DB_HOST || 'localhost',
@@ -19,17 +27,25 @@ const pool = mysql.createPool({
 
 // Hàm kiểm tra kết nối Database khi khởi động Server
 const testConnection = async () => {
+    let connection;
     try {
-        const connection = await pool.getConnection();
+        connection = await pool.getConnection();
         console.log('✅ [Database] Kết nối MySQL thành công tới database:', process.env.DB_NAME || 'mediclinic_db');
-        connection.release();
     } catch (error) {
-        console.error('❌ [Database] Lỗi kết nối MySQL:', error.message);
-        console.error('💡 Gợi ý: Hãy đảm bảo MySQL đang chạy và file database/schema.sql đã được import.');
+        const safeCode = ['ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'EHOSTUNREACH', 'EACCES', 'PROTOCOL_CONNECTION_LOST', 'ER_ACCESS_DENIED_ERROR'].includes(error?.code)
+            ? error.code
+            : 'DB_CONNECTION_FAILED';
+        console.error(`❌ [Database] Không kết nối được MySQL (${safeCode}). Backend sẽ không khởi động.`);
+        const startupError = new Error('MySQL connection failed.');
+        startupError.code = safeCode;
+        throw startupError;
+    } finally {
+        connection?.release();
     }
 };
 
 module.exports = {
     pool,
-    testConnection
+    testConnection,
+    assertDatabaseNameConfigured
 };

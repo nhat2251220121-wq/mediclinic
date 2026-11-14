@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import axiosClient from '../../api/axiosClient';
 import StatusBadge from '../../components/common/StatusBadge';
 import PaymentModal from '../../components/common/PaymentModal';
@@ -16,10 +17,20 @@ const minutesUntilAppointment = (appointmentDate, timeSlot) => {
 const refundLabel = (status) => ({ NOT_REQUIRED: 'Không cần hoàn', PENDING: 'Chờ hoàn tiền', PARTIAL: 'Đã hoàn một phần', COMPLETED: 'Đã hoàn tiền' }[status] || status);
 
 const AppointmentMgmt = () => {
+  const [searchParams] = useSearchParams();
+  const queryStartDate = searchParams.get('startDate') || '';
+  const queryEndDate = searchParams.get('endDate') || '';
+  const validQueryRange = /^\d{4}-\d{2}-\d{2}$/.test(queryStartDate) && /^\d{4}-\d{2}-\d{2}$/.test(queryEndDate) && queryStartDate <= queryEndDate;
   const [appointments, setAppointments] = useState([]);
   const [filterStatus, setFilterStatus] = useState('ALL');
+  const [filterDoctor, setFilterDoctor] = useState('ALL');
+  const [startDate, setStartDate] = useState(() => validQueryRange ? queryStartDate : '');
+  const [endDate, setEndDate] = useState(() => validQueryRange ? queryEndDate : '');
+  const [doctors, setDoctors] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const appointmentsRequestId = useRef(0);
   const [cancellationRequests, setCancellationRequests] = useState([]);
   const [cancellationFilter, setCancellationFilter] = useState('PENDING');
   const [cancellationLoading, setCancellationLoading] = useState(true);
@@ -28,9 +39,42 @@ const AppointmentMgmt = () => {
   const [selectedApp, setSelectedApp] = useState(null);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
 
+  const fetchAppointments = useCallback(async () => {
+    const requestId = ++appointmentsRequestId.current;
+    setLoading(true);
+    setLoadError('');
+    const params = {};
+    if (filterDoctor !== 'ALL') params.doctor_id = filterDoctor;
+    if (startDate) params.startDate = startDate;
+    if (endDate) params.endDate = endDate;
+    if (filterStatus !== 'ALL') params.status = filterStatus;
+    try {
+      const [res, cancellationRes] = await Promise.all([
+        axiosClient.get('/appointments', { params }),
+        axiosClient.get('/appointments/admin/cancellation-requests', { params: { status: cancellationFilter } })
+      ]);
+      if (requestId !== appointmentsRequestId.current) return;
+      if (res.success) setAppointments(res.data || []);
+      if (cancellationRes.success) setCancellationRequests(cancellationRes.data || []);
+    } catch (err) {
+      if (requestId !== appointmentsRequestId.current) return;
+      setLoadError(err.message || 'Không tải được danh sách lịch hẹn theo bộ lọc.');
+    } finally {
+      if (requestId === appointmentsRequestId.current) {
+        setLoading(false);
+        setCancellationLoading(false);
+      }
+    }
+  }, [filterDoctor, startDate, endDate, filterStatus, cancellationFilter]);
+
+  useEffect(() => {
+    axiosClient.get('/admin/doctors')
+      .then((result) => setDoctors(result.data || []))
+      .catch(() => setDoctors([]));
+  }, []);
+
   useEffect(() => {
     fetchAppointments();
-
     const handlePaymentCompleted = (data) => {
       console.log('⚡ Socket payment_updated in AppointmentMgmt:', data);
       if (['CANCELLED', 'NO_SHOW'].includes(data?.status)) setIsPaymentOpen(false);
@@ -45,26 +89,7 @@ const AppointmentMgmt = () => {
       socket.off('cancellation_requests_updated', handlePaymentCompleted);
       socket.off('appointments_updated', handlePaymentCompleted);
     };
-  }, []);
-
-  const fetchAppointments = async () => {
-    setLoading(true);
-    try {
-      const [res, cancellationRes] = await Promise.all([
-        axiosClient.get('/appointments'),
-        axiosClient.get('/appointments/admin/cancellation-requests', { params: { status: cancellationFilter } })
-      ]);
-      if (res.success) {
-        setAppointments(res.data);
-      }
-      if (cancellationRes.success) setCancellationRequests(cancellationRes.data || []);
-    } catch (err) {
-      console.error('Lỗi lấy danh sách lịch hẹn:', err);
-    } finally {
-      setLoading(false);
-      setCancellationLoading(false);
-    }
-  };
+  }, [fetchAppointments]);
 
   const handleClinicCancel = async (app) => {
     const reason = window.prompt('Nhập lý do phòng khám hủy lịch:') || '';
@@ -124,21 +149,22 @@ const AppointmentMgmt = () => {
   };
 
   const filtered = appointments.filter(app => {
-    const matchStatus = filterStatus === 'ALL' || app.status === filterStatus;
-    const matchSearch = app.patient_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                        app.doctor_name?.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchStatus && matchSearch;
+    const term = searchTerm.trim().toLocaleLowerCase('vi');
+    return !term || [app.patient_name, app.patient_phone, app.id]
+      .some((value) => String(value || '').toLocaleLowerCase('vi').includes(term));
   });
 
+  const clearFilters = () => {
+    setFilterDoctor('ALL');
+    setStartDate('');
+    setEndDate('');
+    setFilterStatus('ALL');
+    setSearchTerm('');
+  };
+
   const handleCancellationFilterChange = async (event) => {
-    const status = event.target.value;
-    setCancellationFilter(status);
+    setCancellationFilter(event.target.value);
     setCancellationLoading(true);
-    try {
-      const result = await axiosClient.get('/appointments/admin/cancellation-requests', { params: { status } });
-      if (result.success) setCancellationRequests(result.data || []);
-    } catch (error) { window.alert(error.message || 'Không tải được yêu cầu hủy.'); }
-    finally { setCancellationLoading(false); }
   };
 
   return (
@@ -189,34 +215,50 @@ const AppointmentMgmt = () => {
       </section>
 
       {/* Filter and Search Bar */}
-      <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col sm:flex-row items-center gap-3 justify-between">
-        <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Tìm theo tên bệnh nhân hoặc bác sĩ..."
-            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
-          />
-        </div>
-
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <span className="text-xs text-slate-500 font-semibold">Lọc trạng thái:</span>
+      <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <label className="min-w-0 text-xs font-semibold text-slate-600">Tìm bệnh nhân
+          <div className="relative mt-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Tên bệnh nhân hoặc mã lịch..."
+              aria-label="Tìm bệnh nhân hoặc mã lịch"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-sky-500"
+            />
+          </div>
+        </label>
+        <label className="min-w-0 text-xs font-semibold text-slate-600">Bác sĩ
           <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-sky-500"
+            value={filterDoctor}
+            onChange={(e) => setFilterDoctor(e.target.value)}
+            className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-sky-500"
           >
-            <option value="ALL">Tất cả trạng thái</option>
-            <option value="PENDING">Chờ xác nhận (PENDING)</option>
-            <option value="CONFIRMED">Đã xác nhận (CONFIRMED)</option>
-            <option value="COMPLETED">Đã khám xong (COMPLETED)</option>
-            <option value="CANCELLED">Đã hủy (CANCELLED)</option>
-            <option value="NO_SHOW">Vắng mặt (NO_SHOW)</option>
+            <option value="ALL">Tất cả bác sĩ</option>
+            {doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctor.full_name}{doctor.doctor_active ? '' : ' · Đã ngừng'}</option>)}
           </select>
+        </label>
+        <label className="min-w-0 text-xs font-semibold text-slate-600">Từ ngày
+          <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-sky-500" />
+        </label>
+        <label className="min-w-0 text-xs font-semibold text-slate-600">Đến ngày
+          <input type="date" value={endDate} min={startDate || undefined} onChange={(e) => setEndDate(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-sky-500" />
+        </label>
+        <label className="min-w-0 text-xs font-semibold text-slate-600">Trạng thái lịch
+          <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-sky-500">
+            <option value="ALL">Tất cả trạng thái</option><option value="PENDING">Chờ xác nhận</option><option value="CONFIRMED">Đã xác nhận</option><option value="COMPLETED">Đã khám xong</option><option value="CANCELLED">Đã hủy</option><option value="NO_SHOW">Vắng mặt</option>
+          </select>
+        </label>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
+          <p className="text-xs text-slate-500">Có thể kết hợp bác sĩ, khoảng ngày và trạng thái. Để trống ngày để xem toàn bộ thời gian.</p>
+          <button type="button" onClick={clearFilters} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Xóa bộ lọc</button>
         </div>
       </div>
+
+      {loadError && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{loadError}</div>}
 
       {/* Table */}
       <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">

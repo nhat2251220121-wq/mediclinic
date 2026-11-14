@@ -4,6 +4,7 @@ import { ChevronDown, LogOut, Menu, User } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import ImageWithFallback from '../common/ImageWithFallback';
 import PatientNotificationBell from '../common/PatientNotificationBell';
+import AdminAppointmentReminderBell from '../common/AdminAppointmentReminderBell';
 
 const Header = ({ onMenuClick, adminMode = false }) => {
   const { user, logout } = useAuth();
@@ -41,6 +42,7 @@ const Header = ({ onMenuClick, adminMode = false }) => {
 
       <div className="flex items-center gap-4">
         {user?.role === 'PATIENT' && <PatientNotificationBell />}
+        {adminMode && user?.role === 'ADMIN' && <AdminAppointmentReminderBell />}
 
         <div className="h-8 w-px bg-slate-200"></div>
 

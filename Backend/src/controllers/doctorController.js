@@ -144,13 +144,136 @@ const getShifts = async (req, res, next) => {
 const getMySchedule = async (req, res, next) => {
     try {
         const [rows] = await pool.query(
-            `SELECT sd.work_date, se.id AS slot_id, se.status, sh.shift_id, sh.name AS shift_name,
+            `SELECT DATE_FORMAT(sd.work_date, '%Y-%m-%d') AS work_date, se.id AS slot_id, se.status, sh.shift_id, sh.name AS shift_name,
              TIME_FORMAT(sh.start_time, '%H:%i') AS start_time, TIME_FORMAT(sh.end_time, '%H:%i') AS end_time
              FROM doctors d JOIN shift_day_employee sd ON sd.doctor_id = d.id
              JOIN shift_employee se ON se.shift_day_employee_id = sd.id JOIN shifts sh ON sh.shift_id = se.shift_id
              WHERE d.user_id = ? ORDER BY sd.work_date DESC, sh.start_time`, [req.user.id]
         );
         return res.json({ success: true, data: rows });
+    } catch (error) { next(error); }
+};
+
+const parseMyCalendarRange = (query = {}) => {
+    const startDate = query.startDate;
+    const endDate = query.endDate;
+    if (typeof startDate !== 'string' || typeof endDate !== 'string' ||
+        !isRealISODate(startDate) || !isRealISODate(endDate) || startDate > endDate) {
+        return { error: 'Ngày bắt đầu hoặc kết thúc không hợp lệ.' };
+    }
+    const days = (Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86400000 + 1;
+    if (days > 366) return { error: 'Khoảng ngày xem lịch tối đa là 366 ngày.' };
+    return { startDate, endDate };
+};
+
+const getMyCalendar = async (req, res, next) => {
+    try {
+        const range = parseMyCalendarRange(req.query);
+        if (range.error) return res.status(400).json({ success: false, message: range.error });
+        const { startDate, endDate } = range;
+        const [doctorRows] = await pool.query('SELECT id FROM doctors WHERE user_id = ? LIMIT 1', [req.user.id]);
+        if (!doctorRows.length) return res.status(404).json({ success: false, message: 'Không tìm thấy hồ sơ bác sĩ.' });
+        const doctorId = doctorRows[0].id;
+
+        const [shiftRows] = await pool.query(
+            `SELECT DATE_FORMAT(sd.work_date, '%Y-%m-%d') AS work_date, se.id AS shift_employee_id, se.status AS shift_status,
+                sh.shift_id, sh.name AS shift_name,
+                TIME_FORMAT(sh.start_time, '%H:%i') AS start_time,
+                TIME_FORMAT(sh.end_time, '%H:%i') AS end_time
+             FROM shift_day_employee sd
+             JOIN shift_employee se ON se.shift_day_employee_id = sd.id
+             JOIN shifts sh ON sh.shift_id = se.shift_id
+             WHERE sd.doctor_id = ? AND sd.work_date BETWEEN ? AND ?
+             ORDER BY sd.work_date, sh.start_time, se.id`,
+            [doctorId, startDate, endDate]
+        );
+        const [slotRows] = await pool.query(
+            `SELECT se.id AS shift_employee_id, st.id AS slot_id,
+                TIME_FORMAT(st.start_time, '%H:%i') AS start_time,
+                TIME_FORMAT(st.end_time, '%H:%i') AS end_time,
+                st.status AS stored_slot_status,
+                a.appointment_id, a.status AS appointment_status, a.initial_symptoms,
+                DATE_FORMAT(a.appointment_date, '%Y-%m-%d') AS appointment_date,
+                a.time_slot, p.full_name AS patient_name, svc.name AS service_name
+             FROM shift_day_employee sd
+             JOIN shift_employee se ON se.shift_day_employee_id = sd.id
+             JOIN shift_time_slots st ON st.shift_employee_id = se.id
+             LEFT JOIN appointments a ON a.slot_id = st.id AND a.status <> 'CANCELLED'
+             LEFT JOIN users p ON p.id = a.patient_id
+             LEFT JOIN services svc ON svc.id = a.service_id
+             WHERE sd.doctor_id = ? AND sd.work_date BETWEEN ? AND ?
+             ORDER BY sd.work_date, st.start_time, st.id`,
+            [doctorId, startDate, endDate]
+        );
+        const [legacyRows] = await pool.query(
+            `SELECT se.id AS shift_employee_id, a.appointment_id, a.status AS appointment_status,
+                a.initial_symptoms, DATE_FORMAT(a.appointment_date, '%Y-%m-%d') AS appointment_date,
+                a.time_slot, p.full_name AS patient_name, svc.name AS service_name
+             FROM shift_day_employee sd
+             JOIN shift_employee se ON se.shift_day_employee_id = sd.id
+             JOIN appointments a ON a.shift_employee_id = se.id AND a.slot_id IS NULL
+                AND a.appointment_date = sd.work_date AND a.status <> 'CANCELLED'
+             JOIN users p ON p.id = a.patient_id
+             LEFT JOIN services svc ON svc.id = a.service_id
+             WHERE sd.doctor_id = ? AND sd.work_date BETWEEN ? AND ?
+             ORDER BY sd.work_date, a.time_slot, a.appointment_id`,
+            [doctorId, startDate, endDate]
+        );
+
+        const shiftsById = new Map();
+        for (const row of shiftRows) {
+            const workDate = String(row.work_date).slice(0, 10);
+            const shift = {
+                shift_employee_id: row.shift_employee_id,
+                shift_id: row.shift_id,
+                shift_name: row.shift_name,
+                start_time: row.start_time,
+                end_time: row.end_time,
+                shift_status: row.shift_status,
+                slots: [],
+                legacy_appointments: []
+            };
+            if (!shiftsById.has(Number(row.shift_employee_id))) shiftsById.set(Number(row.shift_employee_id), { workDate, shift });
+        }
+        for (const row of slotRows) {
+            const entry = shiftsById.get(Number(row.shift_employee_id));
+            if (!entry) continue;
+            const isBooked = Boolean(row.appointment_id) || row.stored_slot_status === 'BOOKED';
+            const isOff = row.stored_slot_status === 'OFF' || ['OFF', 'FULL'].includes(entry.shift.shift_status);
+            entry.shift.slots.push({
+                slot_id: row.slot_id,
+                start_time: row.start_time,
+                end_time: row.end_time,
+                status: isBooked ? 'BOOKED' : isOff ? 'OFF' : 'AVAILABLE',
+                appointment: row.appointment_id ? {
+                    appointment_id: row.appointment_id,
+                    appointment_date: row.appointment_date,
+                    time_slot: row.time_slot,
+                    status: row.appointment_status,
+                    patient_name: row.patient_name,
+                    service_name: row.service_name,
+                    initial_symptoms: row.initial_symptoms
+                } : null
+            });
+        }
+        for (const row of legacyRows) {
+            shiftsById.get(Number(row.shift_employee_id))?.shift.legacy_appointments.push({
+                appointment_id: row.appointment_id,
+                appointment_date: row.appointment_date,
+                time_slot: row.time_slot,
+                status: row.appointment_status,
+                patient_name: row.patient_name,
+                service_name: row.service_name,
+                initial_symptoms: row.initial_symptoms
+            });
+        }
+
+        const daysByDate = new Map();
+        for (const { workDate, shift } of shiftsById.values()) {
+            if (!daysByDate.has(workDate)) daysByDate.set(workDate, { work_date: workDate, shifts: [] });
+            daysByDate.get(workDate).shifts.push(shift);
+        }
+        return res.json({ success: true, data: [...daysByDate.values()].sort((a, b) => a.work_date.localeCompare(b.work_date)) });
     } catch (error) { next(error); }
 };
 
@@ -273,7 +396,8 @@ const saveMySchedule = async (req, res, next) => {
             return res.status(409).json({ success: false, message: 'Một số ca trong hôm nay đã bắt đầu. Không có thay đổi nào được lưu.', data: { errors: validationErrors } });
         }
         await connection.commit();
-        return res.json({ success: true, message: `Đã lưu ${normalizedDays.length} ngày làm việc.`, data: { days: normalizedDays } });
+        const registeredDayCount = normalizedDays.filter((day) => day.shift_ids.length > 0).length;
+        return res.json({ success: true, message: `Đã lưu lịch làm việc cho ${registeredDayCount} ngày có ca.`, data: { days: normalizedDays } });
     } catch (error) { await connection.rollback(); next(error); }
     finally { connection.release(); }
 };
@@ -317,7 +441,7 @@ const getDoctorById = async (req, res, next) => {
 const getMyProfile = async (req, res, next) => {
     try {
         const [rows] = await pool.query(
-            `SELECT d.id, d.bio, d.experience_years, d.consultation_fee, d.avatar_url,
+            `SELECT d.id, d.bio, d.experience_years, d.avatar_url,
                     d.specialty_id, d.room_id, d.is_active AS doctor_active,
                     u.full_name, u.phone, u.email, u.is_active AS account_active,
                     s.name AS specialty_name, r.name AS room_name, r.room_number
@@ -403,6 +527,8 @@ module.exports = {
     getAvailableSlots,
     getShifts,
     getMySchedule,
+    getMyCalendar,
+    parseMyCalendarRange,
     saveMySchedule,
     getDoctorById,
     getMyProfile,
