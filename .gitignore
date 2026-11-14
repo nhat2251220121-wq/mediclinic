@@ -21,3 +21,6 @@ npm-debug.log*
 docker-release/
 .audit-frontend-build/
 .tmp-docx-qa/
+
+# Project documents are kept locally, not in the source repository
+/docs/
