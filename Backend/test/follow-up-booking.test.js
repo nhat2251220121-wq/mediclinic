@@ -5,6 +5,7 @@ const path = require('node:path');
 const { pool } = require('../src/config/db');
 const appointmentController = require('../src/controllers/appointmentController');
 const { resolveFollowUpStatus, validateFollowUpBooking } = require('../src/utils/followUps');
+const migration019 = require('../database/migrations/019_appointment_follow_up_link');
 
 const futureDate = () => {
   const date = new Date();
@@ -189,4 +190,17 @@ test('migration and schema define the direct FK and one-active-booking constrain
   assert.match(schema, /UNIQUE KEY `uq_appointments_active_follow_up_id`/);
   assert.match(schema, /FOREIGN KEY \(`follow_up_id`\) REFERENCES `follow_up_visits`\(`follow_up_id`\)/);
   assert.doesNotMatch(migration, /UPDATE\s+appointments\s+SET\s+follow_up_id/i);
+});
+
+test('migration 019 accepts signed INT metadata with or without display width and rejects incompatible types', () => {
+  const { isSignedIntColumnType } = migration019._internals;
+  assert.equal(isSignedIntColumnType('int'), true);
+  assert.equal(isSignedIntColumnType('int(11)'), true);
+  assert.equal(isSignedIntColumnType('INT'), true);
+  assert.equal(isSignedIntColumnType('INT(11)'), true);
+  assert.equal(isSignedIntColumnType('int unsigned'), false);
+  assert.equal(isSignedIntColumnType('int(11) unsigned'), false);
+  assert.equal(isSignedIntColumnType('bigint'), false);
+  assert.equal(isSignedIntColumnType('bigint(20)'), false);
+  assert.equal(isSignedIntColumnType(null), false);
 });

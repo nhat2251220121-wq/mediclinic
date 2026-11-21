@@ -12,7 +12,7 @@ test('cash request refuses to switch a QR invoice to cash', async () => {
     release: () => {},
     query: async (sql) => {
       queries.push(sql);
-      return [[{
+      if (sql.startsWith('SELECT id, patient_id, appointment_id')) return [[{
         id: 42,
         patient_id: 7,
         appointment_id: 15,
@@ -20,6 +20,8 @@ test('cash request refuses to switch a QR invoice to cash', async () => {
         invoice_status: 'ACTIVE',
         payment_method: 'BANK_TRANSFER'
       }]];
+      if (sql.startsWith('SELECT status FROM appointments')) return [[{ status: 'PENDING' }]];
+      throw new Error(`Unexpected query in cash-request test: ${sql}`);
     }
   });
 
@@ -36,7 +38,8 @@ test('cash request refuses to switch a QR invoice to cash', async () => {
 
     assert.equal(statusCode, 409);
     assert.match(responseBody.message, /đã chọn QR/i);
-    assert.equal(queries.length, 1, 'the handler must stop before any payment or invoice update');
+    assert.equal(queries.length, 2, 'the handler may read the appointment but must stop before payment or invoice writes');
+    assert.ok(queries.every((sql) => /^SELECT\b/i.test(sql)), 'refusal must not write payment or invoice data');
   } finally {
     pool.getConnection = originalGetConnection;
   }

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axiosClient from '../../api/axiosClient';
+import useAppDialog from '../../hooks/useAppDialog';
 import { Pill, Plus, Search, Edit, Archive, X, RefreshCw, Save, Check, Boxes, AlertTriangle } from 'lucide-react';
 
 const medicineIsActive = (value) => value === true || Number(value) === 1;
@@ -37,6 +38,7 @@ const getExpirySummary = (drug) => {
 };
 
 const MedicineMgmt = () => {
+  const { confirm, alert, dialog } = useAppDialog();
   const [activeTab, setActiveTab] = useState('drugs');
   const [drugs, setDrugs] = useState([]);
   const [units, setUnits] = useState([]);
@@ -181,14 +183,14 @@ const MedicineMgmt = () => {
       setIsMealRelationModalOpen(false);
       await fetchMealRelations();
     } catch (err) {
-      alert('Lỗi lưu quan hệ bữa ăn: ' + (err.message || 'Lỗi server'));
+      await alert('Lỗi lưu quan hệ bữa ăn: ' + (err.message || 'Lỗi server'));
     }
   };
 
   const setMealRelationActive = async (relation) => {
     const active = Boolean(relation.is_active);
     const action = active ? 'ngừng sử dụng' : 'kích hoạt lại';
-    if (!window.confirm(`Bạn có chắc muốn ${action} “${relation.name}”?`)) return;
+    if (!await confirm(`Bạn có chắc muốn ${action} “${relation.name}”?`, { title: 'Xác nhận quan hệ bữa ăn' })) return;
     setPendingRelationId(relation.relation_id); setActionNotice(null);
     try {
       if (active) await axiosClient.delete(`/admin/meal-relations/${relation.relation_id}`);
@@ -238,12 +240,12 @@ const MedicineMgmt = () => {
       setActionNotice({ type: 'success', message: 'Đã lưu thuốc. Nhập tồn kho qua quản lý lô để ghi ngày hết hạn và lịch sử.' });
       await fetchMedicines();
     } catch (err) {
-      alert('Lỗi lưu thuốc: ' + (err.message || 'Lỗi server'));
+      await alert('Lỗi lưu thuốc: ' + (err.message || 'Lỗi server'));
     }
   };
 
   const handleDeleteDrug = async (drug) => {
-    if (!window.confirm(`Ngừng kinh doanh thuốc “${drug.name}”? Thuốc sẽ không còn dùng cho đơn mới. Đơn thuốc, tồn kho và lịch sử kho cũ vẫn được giữ.`)) return;
+    if (!await confirm(`Ngừng kinh doanh thuốc “${drug.name}”? Thuốc sẽ không còn dùng cho đơn mới. Đơn thuốc, tồn kho và lịch sử kho cũ vẫn được giữ.`, { title: 'Ngừng kinh doanh thuốc' })) return;
     setPendingDeleteId(drug.id); setActionNotice(null);
     try {
       const result = await axiosClient.delete(`/admin/medicines/${drug.id}`);
@@ -255,7 +257,7 @@ const MedicineMgmt = () => {
   };
 
   const reactivateDrug = async (drug) => {
-    if (!window.confirm(`Kích hoạt lại thuốc “${drug.name}” để có thể chọn cho đơn mới? Tồn kho và lịch sử cũ không thay đổi.`)) return;
+    if (!await confirm(`Kích hoạt lại thuốc “${drug.name}” để có thể chọn cho đơn mới? Tồn kho và lịch sử cũ không thay đổi.`, { title: 'Kích hoạt lại thuốc' })) return;
     setPendingDeleteId(drug.id); setActionNotice(null);
     try {
       const result = await axiosClient.patch(`/admin/medicines/${drug.id}/reactivate`);
@@ -287,7 +289,7 @@ const MedicineMgmt = () => {
     event.preventDefault();
     if (!lotsDrug || !lotAction) return;
     const title = lotAction === 'RECEIVE' ? `Nhập ${lotForm.quantity} đơn vị vào kho thuốc ${lotsDrug.name}` : lotAction === 'CLASSIFY' ? `Gắn lô đã xác minh cho ${lotForm.quantity} đơn vị tồn cũ của ${lotsDrug.name}` : lotAction === 'ADJUST' ? `Điều chỉnh ${lotForm.quantity_delta} đơn vị của lô thuốc ${lotsDrug.name}` : `Ghi nhận hủy ${lotForm.quantity} đơn vị thuốc ${lotsDrug.name}`;
-    if (lotAction !== 'RECEIVE' && !window.confirm(`${title}? Lý do: ${lotForm.note || 'chưa nhập'}`)) return;
+    if (lotAction !== 'RECEIVE' && !await confirm(`${title}? Lý do: ${lotForm.note || 'chưa nhập'}`, { title: 'Xác nhận thao tác lô thuốc' })) return;
     try {
       let result;
       if (lotAction === 'RECEIVE') result = await axiosClient.post(`/admin/medicines/${lotsDrug.id}/lots`, lotForm);
@@ -620,6 +622,7 @@ const MedicineMgmt = () => {
           <div className="flex justify-end gap-2 border-t border-slate-100 pt-3"><button type="button" onClick={() => setIsIcdModalOpen(false)} className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-200">Hủy</button><button type="submit" disabled={icdSaving} className="inline-flex items-center gap-2 rounded-xl bg-teal-800 px-5 py-2.5 text-sm font-bold text-white hover:bg-teal-900 disabled:opacity-60">{icdSaving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{icdSaving ? 'Đang lưu...' : 'Lưu mã ICD-10'}</button></div>
         </form>
       </div>}
+      {dialog}
     </div>
   );
 };

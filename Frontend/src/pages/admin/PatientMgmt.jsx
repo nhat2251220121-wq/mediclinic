@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import axiosClient from '../../api/axiosClient';
+import useAppDialog from '../../hooks/useAppDialog';
 import { Search, RefreshCw, Check, X, Edit, Eye } from 'lucide-react';
 import PatientDetailModal from './PatientDetailModal';
 
 const PatientMgmt = () => {
+  const { confirm, alert, dialog } = useAppDialog();
   const [patients, setPatients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -55,7 +57,7 @@ const PatientMgmt = () => {
   const handleToggleActive = async (p) => {
     const newStatus = p.is_active ? 0 : 1;
     const action = newStatus ? 'mở khóa' : 'khóa';
-    if (!window.confirm(`${action === 'khóa' ? 'Khóa' : 'Mở khóa'} tài khoản bệnh nhân “${p.full_name}”? Bệnh án, lịch sử khám, hóa đơn và thanh toán không bị xóa.`)) return;
+    if (!await confirm(`${action === 'khóa' ? 'Khóa' : 'Mở khóa'} tài khoản bệnh nhân “${p.full_name}”? Bệnh án, lịch sử khám, hóa đơn và thanh toán không bị xóa.`, { title: action === 'khóa' ? 'Khóa tài khoản bệnh nhân' : 'Mở khóa tài khoản bệnh nhân' })) return;
     setPendingStatusId(p.id); setActionNotice(null);
     try {
       const result = await axiosClient.put(`/admin/patients/${p.id}`, {
@@ -77,7 +79,7 @@ const PatientMgmt = () => {
       setSelectedPatient(null);
       fetchPatients();
     } catch (err) {
-      alert('Lỗi cập nhật bệnh nhân: ' + (err.message || 'Lỗi server'));
+      await alert('Lỗi cập nhật bệnh nhân: ' + (err.message || 'Lỗi server'));
     }
   };
 
@@ -258,6 +260,7 @@ const PatientMgmt = () => {
           </div>
         </div>
       )}
+      {dialog}
     </div>
   );
 };

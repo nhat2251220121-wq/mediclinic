@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import axiosClient from '../../api/axiosClient';
 import { Building, Plus, Search, Edit, Trash2, X, RefreshCw } from 'lucide-react';
 import DoctorCountDetailsButton from './DoctorCountDetailsButton';
+import useAppDialog from '../../hooks/useAppDialog';
 
 const RoomMgmt = () => {
+  const { confirm, alert, dialog } = useAppDialog();
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -53,12 +55,12 @@ const RoomMgmt = () => {
       setIsModalOpen(false);
       fetchRooms();
     } catch (err) {
-      alert('Lỗi lưu phòng khám: ' + (err.message || 'Lỗi server'));
+      await alert('Lỗi lưu phòng khám: ' + (err.message || 'Lỗi server'));
     }
   };
 
   const handleDelete = async (item) => {
-    if (!window.confirm(`Ngừng sử dụng phòng “${item.name}” (${item.room_number})? Bác sĩ, lịch khám và hồ sơ cũ vẫn được giữ.`)) return;
+    if (!await confirm(`Ngừng sử dụng phòng “${item.name}” (${item.room_number})? Bác sĩ, lịch khám và hồ sơ cũ vẫn được giữ.`, { title: 'Ngừng sử dụng phòng' })) return;
     setPendingDeleteId(item.id); setActionNotice(null);
     try {
       const result = await axiosClient.delete(`/admin/rooms/${item.id}`);
@@ -231,6 +233,7 @@ const RoomMgmt = () => {
           </div>
         </div>
       )}
+      {dialog}
     </div>
   );
 };

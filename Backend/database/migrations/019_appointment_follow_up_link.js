@@ -34,6 +34,8 @@ const foreignKeyExists = async (connection, tableName, constraintName) => {
   return Number(row?.found || 0) > 0;
 };
 
+const isSignedIntColumnType = (columnType) => /^int(?:\(\d+\))?$/i.test(String(columnType || '').trim());
+
 exports.up = async (connection) => {
   const appointments = await tableInfo(connection, 'appointments');
   const followUps = await tableInfo(connection, 'follow_up_visits');
@@ -43,9 +45,9 @@ exports.up = async (connection) => {
   }
 
   const followUpPk = await columnInfo(connection, 'follow_up_visits', 'follow_up_id');
-  if (!followUpPk || !/^int\(/i.test(followUpPk.columnType)) throw new Error('follow_up_visits.follow_up_id must be an INT column.');
+  if (!followUpPk || !isSignedIntColumnType(followUpPk.columnType)) throw new Error('follow_up_visits.follow_up_id must be a signed INT column.');
   const currentLink = await columnInfo(connection, 'appointments', 'follow_up_id');
-  if (currentLink && currentLink.columnType !== followUpPk.columnType) {
+  if (currentLink && !isSignedIntColumnType(currentLink.columnType)) {
     throw new Error('appointments.follow_up_id does not match follow_up_visits.follow_up_id.');
   }
   if (!currentLink) await connection.query('ALTER TABLE appointments ADD COLUMN follow_up_id INT NULL AFTER slot_id');
@@ -100,4 +102,4 @@ exports.down = async (connection) => {
   }
 };
 
-exports._internals = { tableInfo, columnInfo, indexExists, foreignKeyExists };
+exports._internals = { tableInfo, columnInfo, indexExists, foreignKeyExists, isSignedIntColumnType };

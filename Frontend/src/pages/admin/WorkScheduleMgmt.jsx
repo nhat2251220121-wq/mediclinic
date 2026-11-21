@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CalendarDays, Check, Clock3, Filter, RefreshCw, UserRound, X } from 'lucide-react';
 import axiosClient from '../../api/axiosClient';
+import useAppDialog from '../../hooks/useAppDialog';
 
 const clinicDate = (date = new Date()) => {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -46,6 +47,7 @@ const appointmentStatuses = {
 };
 
 const WorkScheduleMgmt = () => {
+  const { confirm, dialog } = useAppDialog();
   const today = clinicDate();
   const [filters, setFilters] = useState({ startDate: today, endDate: addDays(today, 6), doctor_id: '', specialty_id: '', status: '' });
   const [doctors, setDoctors] = useState([]);
@@ -118,7 +120,7 @@ const WorkScheduleMgmt = () => {
   const updateSlot = async (slot) => {
     const status = slot.slot_status === 'AVAILABLE' ? 'OFF' : 'AVAILABLE';
     const action = status === 'OFF' ? 'ngừng nhận đặt lịch' : 'mở lại nhận đặt lịch';
-    if (!window.confirm(`Bạn có chắc muốn ${action} khung ${slot.start_time}–${slot.end_time} của ${slot.doctor_name} ngày ${formatDate(slot.work_date)}?`)) return;
+    if (!await confirm(`Bạn có chắc muốn ${action} khung ${slot.start_time}–${slot.end_time} của ${slot.doctor_name} ngày ${formatDate(slot.work_date)}?`, { title: 'Xác nhận thay đổi khung giờ' })) return;
     setBusySlotId(slot.slot_id);
     setActionError('');
     try {
@@ -264,6 +266,7 @@ const WorkScheduleMgmt = () => {
           </div>}
         </div>
       </div>}
+      {dialog}
     </div>
   );
 };

@@ -2,10 +2,12 @@ import React, { useState, useEffect } from 'react';
 import axiosClient from '../../api/axiosClient';
 import { Plus, Search, RefreshCw, Mail, Phone, Building, X, Pencil } from 'lucide-react';
 import ImageWithFallback from '../../components/common/ImageWithFallback';
+import useAppDialog from '../../hooks/useAppDialog';
 
 const doctorIsActive = (doctor) => Number(doctor.doctor_active) === 1 && Number(doctor.account_active) === 1;
 
 const DoctorMgmt = () => {
+  const { confirm, dialog } = useAppDialog();
   const [doctors, setDoctors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [doctorTab, setDoctorTab] = useState('ACTIVE');
@@ -97,7 +99,7 @@ const DoctorMgmt = () => {
   };
 
   const deactivateDoctor = async (doctor) => {
-    if (!window.confirm(`Ngừng hoạt động tài khoản bác sĩ “${doctor.full_name}”? Bác sĩ sẽ không nhận lịch mới; lịch hẹn, bệnh án và đơn thuốc cũ vẫn được giữ.`)) return;
+    if (!await confirm(`Ngừng hoạt động tài khoản bác sĩ “${doctor.full_name}”? Bác sĩ sẽ không nhận lịch mới; lịch hẹn, bệnh án và đơn thuốc cũ vẫn được giữ.`, { title: 'Ngừng hoạt động bác sĩ' })) return;
     setPendingDeactivateId(doctor.id); setActionNotice(null);
     try {
       const result = await axiosClient.delete(`/admin/doctors/${doctor.id}`);
@@ -109,7 +111,7 @@ const DoctorMgmt = () => {
   };
 
   const reactivateDoctor = async (doctor) => {
-    if (!window.confirm(`Kích hoạt lại tài khoản bác sĩ “${doctor.full_name}” để nhận lịch mới?`)) return;
+    if (!await confirm(`Kích hoạt lại tài khoản bác sĩ “${doctor.full_name}” để nhận lịch mới?`, { title: 'Kích hoạt lại bác sĩ' })) return;
     setPendingActivateId(doctor.id); setActionNotice(null);
     try {
       const result = await axiosClient.put(`/admin/doctors/${doctor.id}`, {
@@ -129,6 +131,15 @@ const DoctorMgmt = () => {
   };
 
   const activeDoctors = doctors.filter(doctorIsActive);
+  const handleRemoveAvatar = async () => {
+    if (avatarFile) {
+      setAvatarFile(null); setAvatarPreview(editingDoctor?.avatar_url || ''); setRemoveAvatar(false);
+      return;
+    }
+    if (editingDoctor?.avatar_url && !await confirm(`Gỡ ảnh đại diện của bác sĩ “${form.full_name}”? Thao tác chỉ hoàn tất khi lưu biểu mẫu.`, { title: 'Gỡ ảnh đại diện' })) return;
+    setAvatarPreview(''); setRemoveAvatar(Boolean(editingDoctor?.avatar_url));
+  };
+
   const inactiveDoctors = doctors.filter((doctor) => !doctorIsActive(doctor));
   const visibleDoctors = (doctorTab === 'ACTIVE' ? activeDoctors : inactiveDoctors).filter((doctor) =>
     `${doctor.full_name || ''} ${doctor.specialty_name || ''}`.toLowerCase().includes(searchTerm.trim().toLowerCase())
@@ -160,7 +171,7 @@ const DoctorMgmt = () => {
           <div className="flex items-center justify-between"><h3 className="text-lg font-semibold">{editingDoctor ? 'Cập nhật bác sĩ' : 'Tạo tài khoản bác sĩ'}</h3><button type="button" onClick={() => { setShowCreate(false); setEditingDoctor(null); setAvatarFile(null); setAvatarPreview(''); setRemoveAvatar(false); }} aria-label="Đóng"><X className="h-5 w-5" /></button></div>
           {saveError && <div role="alert" className="break-words rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{saveError}</div>}
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="flex items-center gap-3 sm:col-span-2"><ImageWithFallback src={avatarPreview} alt="Ảnh bác sĩ" className="h-16 w-16 rounded-full object-cover" fallback={<span className="font-bold text-xl">{form.full_name?.charAt(0) || 'B'}</span>} /><label className="cursor-pointer rounded-lg border px-3 py-2 text-sm">{avatarPreview ? 'Thay ảnh đại diện' : 'Chọn ảnh đại diện'}<input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event)=>{ const file=event.target.files?.[0]; if (!file) return; if (file.size > 5*1024*1024) { setSaveError('Ảnh không được vượt quá 5 MB.'); return; } setAvatarFile(file); setRemoveAvatar(false); setAvatarPreview(URL.createObjectURL(file)); setSaveError(''); }} /></label>{avatarPreview && <button type="button" onClick={()=>{ if (avatarFile) { setAvatarFile(null); setAvatarPreview(editingDoctor?.avatar_url || ''); setRemoveAvatar(false); } else { if (editingDoctor?.avatar_url && !window.confirm(`Gỡ ảnh đại diện của bác sĩ “${form.full_name}”? Thao tác chỉ hoàn tất khi lưu biểu mẫu.`)) return; setAvatarPreview(''); setRemoveAvatar(Boolean(editingDoctor?.avatar_url)); } }} className="text-sm text-rose-700">Bỏ ảnh</button>}</div>
+            <div className="flex items-center gap-3 sm:col-span-2"><ImageWithFallback src={avatarPreview} alt="Ảnh bác sĩ" className="h-16 w-16 rounded-full object-cover" fallback={<span className="font-bold text-xl">{form.full_name?.charAt(0) || 'B'}</span>} /><label className="cursor-pointer rounded-lg border px-3 py-2 text-sm">{avatarPreview ? 'Thay ảnh đại diện' : 'Chọn ảnh đại diện'}<input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event)=>{ const file=event.target.files?.[0]; if (!file) return; if (file.size > 5*1024*1024) { setSaveError('Ảnh không được vượt quá 5 MB.'); return; } setAvatarFile(file); setRemoveAvatar(false); setAvatarPreview(URL.createObjectURL(file)); setSaveError(''); }} /></label>{avatarPreview && <button type="button" onClick={handleRemoveAvatar} className="text-sm text-rose-700">Bỏ ảnh</button>}</div>
             {[['full_name','Họ và tên','text'],['phone','Số điện thoại','tel'],['email','Email','email'],...(!editingDoctor ? [['password','Mật khẩu khởi tạo','password']] : []),['experience_years','Số năm kinh nghiệm','number']].map(([key,label,type]) => <label key={key} className={`min-w-0 space-y-1 text-sm ${key === 'password' ? 'sm:col-span-2' : ''}`}><span>{label}{key === 'password' ? ' *' : ''}</span><input id={key === 'password' ? 'doctor-password' : undefined} required={['full_name','phone','email'].includes(key)} type={type} min={type==='number'?0:undefined} value={form[key]} aria-invalid={key === 'password' && Boolean(passwordError)} aria-describedby={key === 'password' ? 'doctor-password-help doctor-password-error' : undefined} onChange={(event)=>{ const value = event.target.value; setForm((current)=>({...current,[key]:value})); setSaveError(''); if (key === 'password') setPasswordError((current) => current ? (value.length < 12 ? 'Mật khẩu khởi tạo cần ít nhất 12 ký tự.' : '') : ''); }} className={`w-full min-w-0 rounded-lg border px-3 py-2 ${key === 'password' && passwordError ? 'border-rose-500 ring-1 ring-rose-200' : 'border-slate-300'}`} />{key === 'password' && <><span id="doctor-password-help" className="block break-words text-xs leading-5 text-slate-500">Mật khẩu khởi tạo cần ít nhất 12 ký tự.</span>{passwordError && <span id="doctor-password-error" role="alert" className="block break-words text-xs leading-5 font-medium text-rose-700">{passwordError}</span>}</>}</label>)}
             <label className="space-y-1 text-sm"><span>Chuyên khoa</span><select value={form.specialty_id} onChange={(event)=>setForm({...form,specialty_id:event.target.value})} className="w-full rounded-lg border border-slate-300 px-3 py-2"><option value="">Chưa phân công</option>{specialties.filter((item)=>item.is_active).map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
             <label className="space-y-1 text-sm"><span>Phòng khám</span><select value={form.room_id} onChange={(event)=>setForm({...form,room_id:event.target.value})} className="w-full rounded-lg border border-slate-300 px-3 py-2"><option value="">Chưa phân công</option>{rooms.filter((item)=>item.is_active).map((item)=><option key={item.id} value={item.id}>{item.name} ({item.room_number})</option>)}</select></label>
@@ -235,6 +246,7 @@ const DoctorMgmt = () => {
           )}
         </div>
       </div>
+      {dialog}
     </div>
   );
 };

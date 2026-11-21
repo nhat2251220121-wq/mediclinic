@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import PaymentModal from '../../components/common/PaymentModal';
 import { Calendar, Clock, User, Stethoscope, AlertTriangle, CheckCircle2, ArrowLeft, CreditCard, ShieldCheck, ChevronRight, QrCode, Banknote, Loader2, Save, Edit3, Check } from 'lucide-react';
 import AIChatWidget from '../../components/common/AIChatWidget';
+import useAppDialog from '../../hooks/useAppDialog';
 
 const clinicToday = () => {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' })
@@ -34,6 +35,7 @@ const generate14Days = () => {
 };
 
 const Booking = () => {
+  const { alert, dialog } = useAppDialog();
   const location = useLocation();
   const navigate = useNavigate();
   const { user, updateProfile } = useAuth();
@@ -316,7 +318,7 @@ const Booking = () => {
         }
       }
     } catch (err) {
-      alert('Lỗi đặt lịch hẹn: ' + (err.message || 'Khung giờ này có thể đã được đặt'));
+      await alert('Lỗi đặt lịch hẹn: ' + (err.message || 'Khung giờ này có thể đã được đặt'), { title: 'Không đặt được lịch' });
     } finally {
       setIsSubmitting(false);
     }
@@ -881,6 +883,7 @@ const Booking = () => {
           }}
         />
       )}
+      {dialog}
     </div>
   );
 };

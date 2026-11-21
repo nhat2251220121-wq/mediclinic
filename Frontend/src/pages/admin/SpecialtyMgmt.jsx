@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import axiosClient from '../../api/axiosClient';
+import useAppDialog from '../../hooks/useAppDialog';
 import { Plus, Search, Edit, CircleOff, CircleCheck, X, RefreshCw } from 'lucide-react';
 import DoctorCountDetailsButton from './DoctorCountDetailsButton';
 
 const isSpecialtyActive = (specialty) => specialty.is_active === true || Number(specialty.is_active) === 1;
 
 const SpecialtyMgmt = () => {
+  const { confirm, alert, dialog } = useAppDialog();
   const [specialties, setSpecialties] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('ACTIVE');
@@ -59,12 +61,12 @@ const SpecialtyMgmt = () => {
       await fetchSpecialties({ showLoading: false });
       setActionNotice({ type: 'success', message: editingItem ? 'Đã cập nhật chuyên khoa.' : 'Đã thêm chuyên khoa.' });
     } catch (err) {
-      alert('Lỗi lưu chuyên khoa: ' + (err.message || 'Lỗi server'));
+      await alert('Lỗi lưu chuyên khoa: ' + (err.message || 'Lỗi server'));
     }
   };
 
   const handleDelete = async (item) => {
-    if (!window.confirm(`Ngừng sử dụng chuyên khoa “${item.name}”? Dịch vụ, hồ sơ bác sĩ và lịch sử khám hiện có được giữ nguyên.`)) return;
+    if (!await confirm(`Ngừng sử dụng chuyên khoa “${item.name}”? Dịch vụ, hồ sơ bác sĩ và lịch sử khám hiện có được giữ nguyên.`, { title: 'Ngừng sử dụng chuyên khoa' })) return;
     setPendingStatusId(item.id); setActionNotice(null);
     try {
       const result = await axiosClient.delete(`/admin/specialties/${item.id}`);
@@ -77,7 +79,7 @@ const SpecialtyMgmt = () => {
   };
 
   const handleReactivate = async (item) => {
-    if (!window.confirm(`Kích hoạt lại chuyên khoa “${item.name}”? Chuyên khoa sẽ được phép chọn cho dịch vụ và lịch đặt mới.`)) return;
+    if (!await confirm(`Kích hoạt lại chuyên khoa “${item.name}”? Chuyên khoa sẽ được phép chọn cho dịch vụ và lịch đặt mới.`, { title: 'Kích hoạt lại chuyên khoa' })) return;
     setPendingStatusId(item.id); setActionNotice(null);
     try {
       const result = await axiosClient.put(`/admin/specialties/${item.id}`, { name: item.name, description: item.description || '', is_active: true });
@@ -236,6 +238,7 @@ const SpecialtyMgmt = () => {
         </div>
       )}
       {descriptionItem && <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="specialty-description-title"><button type="button" className="fixed inset-0 bg-slate-950/50" onClick={() => setDescriptionItem(null)} aria-label="Đóng mô tả" /><section className="relative z-10 w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-xl"><header className="flex items-start justify-between gap-3"><div><p className="text-xs font-medium text-teal-800">Chuyên khoa #{descriptionItem.id}</p><h3 id="specialty-description-title" className="mt-1 break-words text-lg font-semibold text-slate-900">{descriptionItem.name}</h3></div><button type="button" onClick={() => setDescriptionItem(null)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Đóng"><X className="h-5 w-5" /></button></header><p className="mt-4 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">{descriptionItem.description || 'Chưa cập nhật mô tả.'}</p></section></div>}
+      {dialog}
     </div>
   );
 };

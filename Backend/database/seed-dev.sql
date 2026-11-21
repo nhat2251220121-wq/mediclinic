@@ -6,13 +6,15 @@ INSERT INTO specialties (name, description) VALUES
 ('Da liễu', 'Khám các bệnh lý da liễu')
 ON DUPLICATE KEY UPDATE description = VALUES(description);
 
-INSERT INTO services (name, price, description, specialty_id)
+INSERT INTO services (name, price, description, specialty_id, search_keywords)
 SELECT 'Khám nội tổng quát', 300000, 'Khám và tư vấn nội khoa tổng quát',
-       (SELECT id FROM specialties WHERE name = 'Nội tổng quát' LIMIT 1)
+       (SELECT id FROM specialties WHERE name = 'Nội tổng quát' LIMIT 1),
+       'người lớn, khám tổng quát, khám sức khỏe, mệt mỏi, chóng mặt, đau đầu, sốt, ho, đau họng, đau bụng, rối loạn tiêu hóa, huyết áp, đường huyết, mỡ máu, tiểu đường, tuyến giáp, gout, đau khớp, đau cột sống, tim mạch, hô hấp'
 WHERE NOT EXISTS (SELECT 1 FROM services WHERE name = 'Khám nội tổng quát');
-INSERT INTO services (name, price, description, specialty_id)
+INSERT INTO services (name, price, description, specialty_id, search_keywords)
 SELECT 'Khám da liễu', 250000, 'Khám và tư vấn các bệnh lý da liễu',
-       (SELECT id FROM specialties WHERE name = 'Da liễu' LIMIT 1)
+       (SELECT id FROM specialties WHERE name = 'Da liễu' LIMIT 1),
+       'da, nổi mụn, mụn trứng cá, nhọt, chốc lở, viêm nang lông, ngứa da, ghẻ, lang ben, hắc lào, nấm da, nấm móng, thủy đậu, zona, giời leo, mụn cóc, herpes, mày đay, chàm, eczema, viêm da cơ địa, viêm da tiếp xúc, dị ứng thuốc, vảy nến, á sừng, bạch biến, nám, tàn nhang, rụng tóc, móng giòn, móng mọc ngược, nốt ruồi thay đổi, u da'
 WHERE NOT EXISTS (SELECT 1 FROM services WHERE name = 'Khám da liễu');
 
 -- The seed is also safe to rerun after the service_specialty migration.
@@ -35,7 +37,8 @@ INSERT INTO dosage_times (name, description) VALUES
 ON DUPLICATE KEY UPDATE description = VALUES(description);
 
 INSERT INTO meal_relations (name, description) VALUES
-('Trước ăn', 'Theo hướng dẫn trước bữa ăn'), ('Sau ăn', 'Theo hướng dẫn sau bữa ăn'), ('Trong khi ăn', 'Dùng cùng bữa ăn')
+('Trước ăn', 'Theo hướng dẫn trước bữa ăn'), ('Sau ăn', 'Theo hướng dẫn sau bữa ăn'), ('Trong khi ăn', 'Dùng cùng bữa ăn'),
+('Không phụ thuộc bữa ăn', 'Không yêu cầu thời điểm dùng thuốc theo bữa ăn')
 ON DUPLICATE KEY UPDATE description = VALUES(description);
 
 INSERT INTO icd10_codes (code, description) VALUES

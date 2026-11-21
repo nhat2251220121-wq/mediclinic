@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import axiosClient from '../../api/axiosClient';
 import StatusBadge from '../../components/common/StatusBadge';
 import PaymentModal from '../../components/common/PaymentModal';
+import useAppDialog from '../../hooks/useAppDialog';
 import { socket } from '../../api/socket';
 import { Calendar, Search, Filter, RefreshCw, Check, X, QrCode } from 'lucide-react';
 
@@ -17,6 +18,7 @@ const minutesUntilAppointment = (appointmentDate, timeSlot) => {
 const refundLabel = (status) => ({ NOT_REQUIRED: 'Không cần hoàn', PENDING: 'Chờ hoàn tiền', PARTIAL: 'Đã hoàn một phần', COMPLETED: 'Đã hoàn tiền' }[status] || status);
 
 const AppointmentMgmt = () => {
+  const { confirm, prompt, alert, dialog } = useAppDialog();
   const [searchParams] = useSearchParams();
   const queryStartDate = searchParams.get('startDate') || '';
   const queryEndDate = searchParams.get('endDate') || '';
@@ -92,17 +94,18 @@ const AppointmentMgmt = () => {
   }, [fetchAppointments]);
 
   const handleClinicCancel = async (app) => {
-    const reason = window.prompt('Nhập lý do phòng khám hủy lịch:') || '';
-    if (reason.trim().length < 3) return window.alert('Cần nhập lý do hủy từ 3 ký tự trở lên.');
-    if (!window.confirm(`Xác nhận hủy lịch #${app.id} từ phía phòng khám? Lý do: ${reason.trim()} Đã thu ${Number(app.amount_paid || 0).toLocaleString('vi-VN')} ₫; khoản này sẽ được giữ nguyên và tạo khoản hoàn thủ công toàn bộ.`)) return;
+    const reason = await prompt('Nhập lý do phòng khám hủy lịch:', '', { title: 'Lý do hủy lịch', multiline: true, inputLabel: 'Lý do hủy' });
+    if (reason === null) return;
+    if (reason.trim().length < 3) { await alert('Cần nhập lý do hủy từ 3 ký tự trở lên.'); return; }
+    if (!await confirm(`Xác nhận hủy lịch #${app.id} từ phía phòng khám?\nLý do: ${reason.trim()}\nĐã thu ${Number(app.amount_paid || 0).toLocaleString('vi-VN')} ₫; khoản này sẽ được giữ nguyên và tạo khoản hoàn thủ công toàn bộ.`, { title: 'Xác nhận hủy lịch' })) return;
     try { await axiosClient.post(`/appointments/admin/${app.id}/cancel`, { reason }); await fetchAppointments(); }
-    catch (error) { window.alert(error.message || 'Không thể hủy lịch.'); }
+    catch (error) { await alert(error.message || 'Không thể hủy lịch.'); }
   };
 
   const handleNoShow = async (app) => {
-    if (!window.confirm(`Xác nhận đã kiểm tra và bệnh nhân vắng lịch #${app.id}? Chỉ được ghi nhận sau ít nhất 15 phút từ giờ bắt đầu.`)) return;
+    if (!await confirm(`Xác nhận đã kiểm tra và bệnh nhân vắng lịch #${app.id}? Chỉ được ghi nhận sau ít nhất 15 phút từ giờ bắt đầu.`, { title: 'Xác nhận bệnh nhân vắng' })) return;
     try { await axiosClient.post(`/appointments/admin/${app.id}/no-show`, { confirmedAbsent: true }); await fetchAppointments(); }
-    catch (error) { window.alert(error.message || 'Không thể ghi nhận vắng mặt.'); }
+    catch (error) { await alert(error.message || 'Không thể ghi nhận vắng mặt.'); }
   };
 
   const handleApproveCancellation = async (item) => {
@@ -110,37 +113,40 @@ const AppointmentMgmt = () => {
     const needsAmount = paid > 0 && (item.request_source === 'CLINIC' || item.under_2_hours);
     let refundAmount;
     if (needsAmount) {
-      const entered = window.prompt(`Số tiền hoàn được duyệt (tối đa ${Number(item.refundable_remaining).toLocaleString('vi-VN')} ₫):`, String(item.refundable_remaining));
+      const entered = await prompt(`Số tiền hoàn được duyệt (tối đa ${Number(item.refundable_remaining).toLocaleString('vi-VN')} ₫):`, String(item.refundable_remaining), { title: 'Nhập số tiền hoàn', inputLabel: 'Số tiền (đồng)', inputMode: 'decimal' });
       if (entered === null) return;
       refundAmount = Number(entered.replace(/,/g, ''));
-      if (!Number.isFinite(refundAmount)) return window.alert('Số tiền hoàn không hợp lệ.');
+      if (!Number.isFinite(refundAmount)) { await alert('Số tiền hoàn không hợp lệ.'); return; }
     }
-    if (!window.confirm(needsAmount ? `Duyệt hủy lịch và tạo khoản hoàn ${refundAmount.toLocaleString('vi-VN')} ₫ ở trạng thái chờ hoàn?` : 'Duyệt yêu cầu hủy lịch? Lịch sẽ bị hủy và hóa đơn hết hiệu lực.')) return;
+    if (!await confirm(needsAmount ? `Duyệt hủy lịch và tạo khoản hoàn ${refundAmount.toLocaleString('vi-VN')} ₫ ở trạng thái chờ hoàn?` : 'Duyệt yêu cầu hủy lịch? Lịch sẽ bị hủy và hóa đơn hết hiệu lực.', { title: 'Duyệt yêu cầu hủy' })) return;
     try { await axiosClient.post(`/appointments/admin/cancellation-requests/${item.id}/approve`, refundAmount === undefined ? {} : { refundAmount }); await fetchAppointments(); }
-    catch (error) { window.alert(error.message || 'Không thể duyệt yêu cầu.'); }
+    catch (error) { await alert(error.message || 'Không thể duyệt yêu cầu.'); }
   };
 
   const handleRejectCancellation = async (item) => {
-    const reason = window.prompt(`Nhập lý do từ chối yêu cầu hủy lịch #${item.appointment_id}:`) || '';
-    if (reason.trim().length < 3) return window.alert('Lý do từ chối phải có ít nhất 3 ký tự.');
+    const reason = await prompt(`Nhập lý do từ chối yêu cầu hủy lịch #${item.appointment_id}:`, '', { title: 'Từ chối yêu cầu hủy', multiline: true, inputLabel: 'Lý do từ chối' });
+    if (reason === null) return;
+    if (reason.trim().length < 3) { await alert('Lý do từ chối phải có ít nhất 3 ký tự.'); return; }
     try { await axiosClient.post(`/appointments/admin/cancellation-requests/${item.id}/reject`, { reason }); await fetchAppointments(); }
-    catch (error) { window.alert(error.message || 'Không thể từ chối yêu cầu.'); }
+    catch (error) { await alert(error.message || 'Không thể từ chối yêu cầu.'); }
   };
 
   const handleConfirmRefund = async (request, refund) => {
     const body = {};
     if (refund.refund_method === 'BANK_TRANSFER') {
-      const referenceCode = window.prompt(`Nhập mã tham chiếu chuyển khoản hoàn ${Number(refund.amount).toLocaleString('vi-VN')} ₫:`) || '';
-      if (!referenceCode.trim()) return window.alert('Cần mã tham chiếu sau khi đã chuyển khoản thực tế.');
+      const referenceCode = await prompt(`Nhập mã tham chiếu chuyển khoản hoàn ${Number(refund.amount).toLocaleString('vi-VN')} ₫:`, '', { title: 'Mã tham chiếu hoàn tiền', inputLabel: 'Mã tham chiếu' });
+      if (referenceCode === null) return;
+      if (!referenceCode.trim()) { await alert('Cần mã tham chiếu sau khi đã chuyển khoản thực tế.'); return; }
       body.referenceCode = referenceCode.trim();
     } else {
-      const note = window.prompt(`Ghi nhận việc trả ${Number(refund.amount).toLocaleString('vi-VN')} ₫ tại quầy:`) || '';
-      if (note.trim().length < 3) return window.alert('Cần ghi chú đã trả tiền mặt tại quầy.');
+      const note = await prompt(`Ghi nhận việc trả ${Number(refund.amount).toLocaleString('vi-VN')} ₫ tại quầy:`, '', { title: 'Ghi nhận hoàn tiền mặt', multiline: true, inputLabel: 'Ghi chú' });
+      if (note === null) return;
+      if (note.trim().length < 3) { await alert('Cần ghi chú đã trả tiền mặt tại quầy.'); return; }
       body.note = note.trim();
     }
-    if (!window.confirm('Chỉ xác nhận nếu khoản tiền đã thực sự được chuyển/trả ngoài hệ thống.')) return;
+    if (!await confirm('Chỉ xác nhận nếu khoản tiền đã thực sự được chuyển/trả ngoài hệ thống.', { title: 'Xác nhận đã hoàn tiền' })) return;
     try { await axiosClient.post(`/appointments/admin/cancellation-requests/${request.id}/refunds/${refund.id}/complete`, body); await fetchAppointments(); }
-    catch (error) { window.alert(error.message || 'Không thể ghi nhận hoàn tiền.'); }
+    catch (error) { await alert(error.message || 'Không thể ghi nhận hoàn tiền.'); }
   };
 
   const handleOpenPayment = (app) => {
@@ -363,6 +369,7 @@ const AppointmentMgmt = () => {
           onSuccess={() => fetchAppointments()}
         />
       )}
+      {dialog}
     </div>
   );
 };

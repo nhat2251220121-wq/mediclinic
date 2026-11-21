@@ -75,8 +75,8 @@ const updatePaymentStatus = async (req, res, next) => {
     const connection = await pool.getConnection();
     try {
         const { id } = req.params;
-        const purpose = req.body.purpose === 'MEDICINE_BALANCE' ? 'MEDICINE_BALANCE' : 'APPOINTMENT';
-        const expectedAmount = Number(req.body.expectedAmount);
+        const purpose = req.body?.purpose === 'MEDICINE_BALANCE' ? 'MEDICINE_BALANCE' : 'APPOINTMENT';
+        const expectedAmount = Number(req.body?.expectedAmount);
         if (!Number.isFinite(expectedAmount) || expectedAmount <= 0) {
             return res.status(400).json({ success: false, message: 'Chỉ có thể xác nhận khoản tiền mặt đã thu tại quầy.' });
         }
@@ -146,7 +146,7 @@ const requestCashPayment = async (req, res, next) => {
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
-        const purpose = req.body.purpose === 'MEDICINE_BALANCE' ? 'MEDICINE_BALANCE' : 'APPOINTMENT';
+        const purpose = req.body?.purpose === 'MEDICINE_BALANCE' ? 'MEDICINE_BALANCE' : 'APPOINTMENT';
         const medicinePayment = purpose === 'MEDICINE_BALANCE';
         const [rows] = await connection.query('SELECT id, patient_id, appointment_id, service_fee, medicine_fee, total_amount, invoice_status, payment_method, medicine_payment_method FROM invoices WHERE id = ? FOR UPDATE', [req.params.id]);
         const invoice = rows[0];

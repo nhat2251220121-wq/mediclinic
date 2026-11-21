@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import axiosClient from '../../api/axiosClient';
 import PaymentModal from '../../components/common/PaymentModal';
+import Modal from '../../components/common/Modal';
 import StatusBadge from '../../components/common/StatusBadge';
 import { socket } from '../../api/socket';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -49,6 +50,9 @@ const MedicalHistory = () => {
   const [cancellationRequests, setCancellationRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadErrors, setLoadErrors] = useState([]);
+  const [quickCancelItem, setQuickCancelItem] = useState(null);
+  const [quickCancelSaving, setQuickCancelSaving] = useState(false);
+  const [quickCancelError, setQuickCancelError] = useState('');
   const [cancellationModalItem, setCancellationModalItem] = useState(null);
   const [bankDetailsRequestId, setBankDetailsRequestId] = useState(null);
   const [cancellationReason, setCancellationReason] = useState('');
@@ -178,10 +182,8 @@ const MedicalHistory = () => {
     const hasPaidAmount = Number(item.invoice?.amount_paid || 0) > 0;
     const requiresReview = hasPaidAmount || minutes == null || minutes < 120;
     if (!requiresReview) {
-      if (!window.confirm(`Hủy lịch khám #${item.id}? Lịch chưa thanh toán và còn ít nhất 2 giờ nên sẽ được hủy ngay.`)) return;
-      axiosClient.post(`/appointments/${item.id}/cancellation-requests`, {})
-        .then(() => fetchData())
-        .catch((error) => window.alert(error.message || 'Không thể hủy lịch.'));
+      setQuickCancelItem(item);
+      setQuickCancelError('');
       return;
     }
     setCancellationModalItem(item);
@@ -190,6 +192,21 @@ const MedicalHistory = () => {
     setRefundBankName('');
     setRefundAccountNumber('');
     setCancellationError('');
+  };
+
+  const submitQuickCancellation = async () => {
+    if (!quickCancelItem || quickCancelSaving) return;
+    setQuickCancelSaving(true);
+    setQuickCancelError('');
+    try {
+      await axiosClient.post(`/appointments/${quickCancelItem.id}/cancellation-requests`, {});
+      setQuickCancelItem(null);
+      await fetchData();
+    } catch (error) {
+      setQuickCancelError(error.message || 'Không thể hủy lịch.');
+    } finally {
+      setQuickCancelSaving(false);
+    }
   };
 
   const submitCancellationRequest = async () => {
@@ -368,6 +385,22 @@ const MedicalHistory = () => {
           ))}
         </div>
       </div>
+
+      <Modal
+        isOpen={Boolean(quickCancelItem)}
+        onClose={() => { if (!quickCancelSaving) setQuickCancelItem(null); }}
+        title={`Xác nhận hủy lịch khám${quickCancelItem ? ` #${quickCancelItem.id}` : ''}`}
+        maxWidth="max-w-md"
+      >
+        <div className="space-y-4">
+          <p className="text-sm leading-6 text-slate-600">Lịch này chưa thanh toán và còn ít nhất 2 giờ trước giờ khám. Xác nhận nếu ông muốn gửi yêu cầu hủy lịch.</p>
+          {quickCancelError && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{quickCancelError}</p>}
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button type="button" disabled={quickCancelSaving} onClick={() => setQuickCancelItem(null)} className="min-h-11 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50">Để sau</button>
+            <button type="button" disabled={quickCancelSaving} onClick={submitQuickCancellation} className="min-h-11 rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{quickCancelSaving ? 'Đang gửi…' : 'Xác nhận hủy lịch'}</button>
+          </div>
+        </div>
+      </Modal>
 
       {cancellationModalItem && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto p-3 sm:p-6">

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axiosClient from '../../api/axiosClient';
 import PaymentModal from '../../components/common/PaymentModal';
+import Modal from '../../components/common/Modal';
 import { socket } from '../../api/socket';
 import { RefreshCw, QrCode, Banknote, Printer, Search } from 'lucide-react';
 
@@ -62,6 +63,9 @@ const InvoiceMgmt = () => {
   const [selectedPaymentPurpose, setSelectedPaymentPurpose] = useState('APPOINTMENT');
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [cashProcessing, setCashProcessing] = useState(null);
+  const [cashConfirmation, setCashConfirmation] = useState(null);
+  const [cashConfirmationError, setCashConfirmationError] = useState('');
+  const [cashFeedback, setCashFeedback] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [receiptInvoice, setReceiptInvoice] = useState(null);
 
@@ -109,14 +113,31 @@ const InvoiceMgmt = () => {
 
   const confirmCash = async (invoice, purpose = 'APPOINTMENT') => {
     const due = Number(invoice.amount_due ?? invoice.total_amount);
-    if (due <= 0 || !window.confirm(`Bệnh nhân: ${invoice.patient_name}\nHóa đơn: #INV-${invoice.id}\nSố còn thiếu hiện tại: ${formatMoney(due)}\n\nXác nhận khoản tiền này đã được thực nhận tại quầy?`)) return;
+    if (due <= 0) return;
+    setCashConfirmation({ invoice, purpose });
+    setCashConfirmationError('');
+    setCashFeedback('');
+  };
+
+  const submitCashConfirmation = async () => {
+    if (!cashConfirmation || cashProcessing) return;
+    const { invoice, purpose } = cashConfirmation;
+    const due = Number(invoice.amount_due ?? invoice.total_amount);
+    if (due <= 0) return;
     setCashProcessing(invoice.id);
+    setCashConfirmationError('');
     try {
       await axiosClient.patch(`/invoices/${invoice.id}/pay`, { expectedAmount: due, purpose });
+      setCashConfirmation(null);
       await fetchInvoices();
     } catch (error) {
-      window.alert(error.message || 'Không xác nhận được khoản thu. Hãy kiểm tra lại hóa đơn.');
-      if (error.code === 'AMOUNT_CHANGED' || error.data?.latestAmountDue !== undefined) await fetchInvoices();
+      if (error.code === 'AMOUNT_CHANGED' || error.data?.latestAmountDue !== undefined) {
+        setCashConfirmation(null);
+        setCashFeedback(error.message || 'Số còn thiếu đã thay đổi. Danh sách hóa đơn đã được làm mới; vui lòng kiểm tra lại.');
+        await fetchInvoices();
+      } else {
+        setCashConfirmationError(error.message || 'Không xác nhận được khoản thu. Hãy kiểm tra lại hóa đơn.');
+      }
     }
     finally { setCashProcessing(null); }
   };
@@ -139,6 +160,7 @@ const InvoiceMgmt = () => {
       </div>
 
       <div className="relative max-w-md"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Tìm mã hóa đơn, mã lịch, tên hoặc điện thoại" className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm" /></div>
+      {cashFeedback && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{cashFeedback}</div>}
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
@@ -242,6 +264,28 @@ const InvoiceMgmt = () => {
           onSuccess={() => fetchInvoices()}
         />
       )}
+
+      <Modal
+        isOpen={Boolean(cashConfirmation)}
+        onClose={() => { if (!cashProcessing) { setCashConfirmation(null); setCashConfirmationError(''); } }}
+        title={cashConfirmation?.purpose === 'MEDICINE_BALANCE' ? 'Xác nhận thu tiền mặt tiền thuốc' : 'Xác nhận thu tiền mặt phí khám'}
+        maxWidth="max-w-md"
+      >
+        {cashConfirmation && <div className="space-y-4">
+          <p className="text-sm leading-6 text-slate-600">Chỉ xác nhận sau khi đã thực nhận tiền mặt tại quầy. Hóa đơn và lịch khám sẽ được cập nhật sau khi xác nhận.</p>
+          <dl className="space-y-3 rounded-xl bg-slate-50 p-4 text-sm">
+            <div className="flex justify-between gap-4"><dt className="text-slate-500">Bệnh nhân</dt><dd className="text-right font-semibold text-slate-900">{cashConfirmation.invoice.patient_name || '—'}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-slate-500">Hóa đơn</dt><dd className="font-semibold text-slate-900">#INV-{cashConfirmation.invoice.id}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-slate-500">Khoản thu</dt><dd className="text-right font-semibold text-slate-900">{cashConfirmation.purpose === 'MEDICINE_BALANCE' ? 'Tiền thuốc còn thiếu' : 'Phí khám dịch vụ'}</dd></div>
+            <div className="flex justify-between gap-4 border-t border-slate-200 pt-3"><dt className="text-slate-600">Số tiền cần xác nhận</dt><dd className="text-right font-bold text-emerald-800">{formatMoney(cashConfirmation.invoice.amount_due ?? cashConfirmation.invoice.total_amount)}</dd></div>
+          </dl>
+          {cashConfirmationError && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{cashConfirmationError}</p>}
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button type="button" disabled={cashProcessing === cashConfirmation.invoice.id} onClick={() => setCashConfirmation(null)} className="min-h-11 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50">Hủy</button>
+            <button type="button" disabled={cashProcessing === cashConfirmation.invoice.id} onClick={submitCashConfirmation} className="min-h-11 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{cashProcessing === cashConfirmation.invoice.id ? 'Đang ghi nhận…' : 'Xác nhận đã nhận tiền'}</button>
+          </div>
+        </div>}
+      </Modal>
 
       {receiptInvoice && <div className="receipt-overlay fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
         <section className="receipt-paper w-full max-w-lg rounded-2xl bg-white p-7 shadow-xl">

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axiosClient from '../../api/axiosClient';
 import { socket } from '../../api/socket';
+import Modal from '../../components/common/Modal';
 import { RefreshCw, Pill, Check, AlertTriangle, Search, X, ArrowDownWideNarrow } from 'lucide-react';
 
 const money = (value) => `${Number(value || 0).toLocaleString('vi-VN')} ₫`;
@@ -15,6 +16,8 @@ const DispensingMgmt = () => {
   const [savingId, setSavingId] = useState(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [dispensingConfirmation, setDispensingConfirmation] = useState(null);
+  const [dispensingConfirmationError, setDispensingConfirmationError] = useState('');
   const [activeTab, setActiveTab] = useState('PENDING');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('NEWEST');
@@ -92,17 +95,24 @@ const DispensingMgmt = () => {
     return '';
   };
 
-  const confirmDispensing = async (record) => {
+  const confirmDispensing = (record) => {
     const issue = deliveryIssue(record);
     if (issue) { setError(issue); return; }
-    const summary = record.items.map((item) => `• ${item.medicine_name}: ${item.prescribed_quantity} ${item.unit_name || 'đơn vị'} · đã tính tiền · còn hạn có thể cấp ${item.available_quantity}`).join('\n');
-    if (!window.confirm(`Xác nhận đã giao thuốc cho ${record.patient_name}?\n${summary}\nHóa đơn đã thanh toán đủ. Kho sẽ trừ theo lô hết hạn gần nhất; không thay đổi đơn thuốc hoặc hóa đơn.`)) return;
+    setError('');
+    setDispensingConfirmationError('');
+    setDispensingConfirmation(record);
+  };
+
+  const submitDispensing = async () => {
+    if (!dispensingConfirmation || savingId) return;
+    const record = dispensingConfirmation;
     setSavingId(record.record_id); setError(''); setNotice('');
     try {
       const result = await axiosClient.post(`/medical-records/${record.record_id}/dispense`, {});
+      setDispensingConfirmation(null);
       setNotice(result.message || 'Đã xác nhận giao thuốc và ghi lịch sử kho.');
       await load();
-    } catch (requestError) { setError(requestError.message || 'Không xác nhận được giao thuốc. Chưa cập nhật tồn; hãy tải lại và kiểm tra.'); }
+    } catch (requestError) { setDispensingConfirmationError(requestError.message || 'Không xác nhận được giao thuốc. Chưa cập nhật tồn; hãy tải lại và kiểm tra.'); }
     finally { setSavingId(null); }
   };
 
@@ -158,6 +168,32 @@ const DispensingMgmt = () => {
         {groupStatus === 'PENDING' && <div className="flex justify-stretch sm:justify-end"><button type="button" disabled={Boolean(issue) || savingId === record.record_id} onClick={() => confirmDispensing(record)} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-teal-800 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"><Check className="h-4 w-4" />{savingId === record.record_id ? 'Đang xác nhận…' : 'Xác nhận đã giao thuốc'}</button></div>}
       </article>;
     })}</div>}
+    <Modal
+      isOpen={Boolean(dispensingConfirmation)}
+      onClose={() => { if (!savingId) { setDispensingConfirmation(null); setDispensingConfirmationError(''); } }}
+      title="Xác nhận đã giao thuốc"
+      maxWidth="max-w-xl"
+    >
+      {dispensingConfirmation && <div className="space-y-4">
+        <p className="text-sm leading-6 text-slate-600">Xác nhận sau khi đã giao đủ thuốc trực tiếp cho bệnh nhân. Khi hoàn tất, hệ thống ghi nhận bàn giao và trừ kho theo lô hết hạn gần nhất (FEFO).</p>
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <p className="font-semibold text-slate-900">{dispensingConfirmation.patient_name} · Lịch #{dispensingConfirmation.appointment_id}</p>
+          <ul className="mt-3 space-y-2">
+            {dispensingConfirmation.items.map((item) => <li key={item.prescription_id} className="flex flex-col gap-1 border-t border-slate-200 pt-2 text-sm sm:flex-row sm:justify-between">
+              <span className="font-medium text-slate-800">{item.medicine_name} · {item.prescribed_quantity} {item.unit_name || 'đơn vị'}</span>
+              <span className="text-slate-600">Còn hạn có thể cấp: {item.available_quantity}</span>
+            </li>)}
+          </ul>
+          <p className="mt-3 border-t border-slate-200 pt-3 text-sm font-semibold text-emerald-800">Hóa đơn đã thanh toán đủ: {money(dispensingConfirmation.items[0]?.invoice_total)}</p>
+        </div>
+        <p className="text-xs text-slate-500">Thao tác này không sửa đơn thuốc hoặc hóa đơn.</p>
+        {dispensingConfirmationError && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{dispensingConfirmationError}</p>}
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button type="button" disabled={savingId === dispensingConfirmation.record_id} onClick={() => setDispensingConfirmation(null)} className="min-h-11 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50">Để sau</button>
+          <button type="button" disabled={savingId === dispensingConfirmation.record_id} onClick={submitDispensing} className="min-h-11 rounded-lg bg-teal-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{savingId === dispensingConfirmation.record_id ? 'Đang ghi nhận…' : 'Xác nhận đã giao'}</button>
+        </div>
+      </div>}
+    </Modal>
   </div>;
 };
 

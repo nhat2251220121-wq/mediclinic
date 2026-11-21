@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import axiosClient from '../../api/axiosClient';
 import { Stethoscope, Plus, Search, Edit, Trash2, Archive, X, RefreshCw } from 'lucide-react';
 import ImageWithFallback from '../../components/common/ImageWithFallback';
+import useAppDialog from '../../hooks/useAppDialog';
 import DoctorCountDetailsButton from './DoctorCountDetailsButton';
 
 const isActive = (value) => value === true || Number(value) === 1;
 
 const ServiceMgmt = () => {
+  const { confirm, dialog } = useAppDialog();
   const [services, setServices] = useState([]);
   const [specialties, setSpecialties] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -101,12 +103,17 @@ const ServiceMgmt = () => {
     setImageFile(file); setPreviewUrl(URL.createObjectURL(file)); setRemoveImage(false); setSaveError('');
   };
 
+  const handleRemoveImage = async () => {
+    if (editingItem?.image_url && !await confirm(`Gỡ ảnh của dịch vụ “${editingItem.name}”? Thao tác chỉ hoàn tất khi lưu biểu mẫu.`, { title: 'Gỡ ảnh dịch vụ' })) return;
+    setImageFile(null); setPreviewUrl(''); setRemoveImage(true);
+  };
+
   const handleDelete = async (item) => {
     const hasHistory = Number(item.appointment_count) > 0 || Number(item.invoice_count) > 0;
     const confirmation = hasHistory
       ? `Lưu trữ dịch vụ “${item.name}”? Dịch vụ có ${Number(item.appointment_count) || 0} lịch sử khám và ${Number(item.invoice_count) || 0} hóa đơn tham chiếu. Dữ liệu lịch sử sẽ được giữ và dịch vụ không còn dùng để đặt mới.`
       : `Xóa hẳn dịch vụ “${item.name}”? Backend sẽ kiểm tra lại tham chiếu trước khi xóa. Chỉ dịch vụ không có lịch hẹn hoặc hóa đơn mới bị xóa khỏi database.`;
-    if (!window.confirm(confirmation)) return;
+    if (!await confirm(confirmation, { title: hasHistory ? 'Lưu trữ dịch vụ' : 'Xóa dịch vụ' })) return;
     setPendingDeleteId(item.id); setActionNotice(null);
     try {
       const result = await axiosClient.delete(`/admin/services/${item.id}`);
@@ -265,7 +272,7 @@ const ServiceMgmt = () => {
                 <ImageWithFallback src={previewUrl} alt="Xem trước ảnh dịch vụ" className="h-32 w-full rounded-xl object-cover" fallback={<Stethoscope className="h-8 w-8" />} />
                 <div className="flex flex-wrap gap-2">
                   <label className="cursor-pointer rounded-lg border px-3 py-2 font-semibold hover:bg-slate-50">{previewUrl ? 'Thay ảnh' : 'Chọn ảnh từ máy'}<input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => selectImage(e.target.files?.[0])} /></label>
-                  {previewUrl && <button type="button" onClick={() => { if (editingItem?.image_url && !window.confirm(`Gỡ ảnh của dịch vụ “${editingItem.name}”? Thao tác chỉ hoàn tất khi lưu biểu mẫu.`)) return; setImageFile(null); setPreviewUrl(''); setRemoveImage(true); }} className="rounded-lg border px-3 py-2 text-rose-700">Bỏ ảnh</button>}
+                  {previewUrl && <button type="button" onClick={handleRemoveImage} className="rounded-lg border px-3 py-2 text-rose-700">Bỏ ảnh</button>}
                   {removeImage && editingItem?.image_url && <button type="button" onClick={() => { setRemoveImage(false); setPreviewUrl(editingItem.image_url); }} className="rounded-lg border px-3 py-2">Giữ ảnh cũ</button>}
                 </div>
               </div>
@@ -339,6 +346,7 @@ const ServiceMgmt = () => {
         </div>
       )}
       {descriptionItem && <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="service-description-title"><button type="button" className="fixed inset-0 bg-slate-950/50" onClick={() => setDescriptionItem(null)} aria-label="Đóng mô tả" /><section className="relative z-10 w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-xl"><header className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-medium text-teal-800">Dịch vụ #{descriptionItem.id}</p><h3 id="service-description-title" className="mt-1 break-words text-lg font-semibold text-slate-900">{descriptionItem.name}</h3></div><button type="button" onClick={() => setDescriptionItem(null)} className="shrink-0 rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Đóng"><X className="h-5 w-5" /></button></header><p className="mt-4 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">{descriptionItem.description || 'Chưa cập nhật mô tả.'}</p></section></div>}
+      {dialog}
     </div>
   );
 };

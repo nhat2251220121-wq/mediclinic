@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Calendar, Check, ChevronLeft, ChevronRight, Clock, Layers3, RefreshCw, Save } from 'lucide-react';
 import axiosClient from '../../api/axiosClient';
+import useAppDialog from '../../hooks/useAppDialog';
 
 const clinicDate = (date = new Date()) => {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
@@ -28,6 +29,7 @@ const formatDate = (dateValue, options = { weekday: 'long', day: '2-digit', mont
 const shiftKey = (shiftId) => String(Number(shiftId));
 
 const ScheduleRegistration = () => {
+  const { confirm, dialog } = useAppDialog();
   const today = clinicDate();
   const [weekStart, setWeekStart] = useState(() => mondayOf(today));
   const [shifts, setShifts] = useState([]);
@@ -92,22 +94,22 @@ const ScheduleRegistration = () => {
     const saved = [...(savedByDate.get(date) || [])].sort((a, b) => a - b);
     return wanted.length !== saved.length || wanted.some((id, index) => id !== saved[index]);
   });
-  const changeWeek = (offset) => {
-    if (hasChanges && !window.confirm('Bạn có thay đổi chưa lưu trong tuần này. Chuyển tuần và bỏ các thay đổi đó?')) return;
+  const changeWeek = async (offset) => {
+    if (hasChanges && !await confirm('Bạn có thay đổi chưa lưu trong tuần này. Chuyển tuần và bỏ các thay đổi đó?', { title: 'Bỏ thay đổi chưa lưu' })) return;
     setMessage('');
     setError('');
     setWeekStart(addDays(weekStart, offset * 7));
   };
 
-  const goToCurrentWeek = () => {
-    if (hasChanges && !window.confirm('Bạn có thay đổi chưa lưu trong tuần này. Về tuần hiện tại và bỏ các thay đổi đó?')) return;
+  const goToCurrentWeek = async () => {
+    if (hasChanges && !await confirm('Bạn có thay đổi chưa lưu trong tuần này. Về tuần hiện tại và bỏ các thay đổi đó?', { title: 'Về tuần hiện tại' })) return;
     setMessage('');
     setError('');
     setWeekStart(mondayOf(clinicDate()));
   };
 
-  const reloadWeek = () => {
-    if (hasChanges && !window.confirm('Bạn có thay đổi chưa lưu. Tải lại sẽ bỏ các thay đổi đó. Tiếp tục?')) return;
+  const reloadWeek = async () => {
+    if (hasChanges && !await confirm('Bạn có thay đổi chưa lưu. Tải lại sẽ bỏ các thay đổi đó. Tiếp tục?', { title: 'Tải lại lịch làm việc' })) return;
     setApplyShiftIds([]);
     load();
   };
@@ -290,6 +292,7 @@ const ScheduleRegistration = () => {
           : <div className="divide-y divide-slate-100">{weekDates.flatMap((date) => schedule.filter((item) => String(item.work_date).slice(0, 10) === date && item.status !== 'OFF').map((item) => ({ ...item, displayDate: date }))).map((item) => <div key={item.slot_id} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm"><span className="font-medium capitalize text-slate-800">{formatDate(item.displayDate)} · {item.shift_name}</span><span className="text-slate-600">{item.start_time}–{item.end_time} · {item.status === 'FULL' ? 'Đã có lịch hẹn' : 'Đang mở đặt lịch'}</span></div>)}</div>}
       </section>
       <p className="text-xs text-slate-500">Ngày được tính theo múi giờ Asia/Ho_Chi_Minh. Bỏ chọn một ngày sẽ gỡ các ca chưa có lịch hẹn; ca có bệnh nhân đặt sẽ khiến toàn bộ lần lưu bị từ chối.</p>
+      {dialog}
     </div>
   );
 };
