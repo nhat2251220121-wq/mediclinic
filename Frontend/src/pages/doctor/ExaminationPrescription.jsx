@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import axiosClient from '../../api/axiosClient';
 import { ArrowLeft, Eye, LoaderCircle, Plus, Printer, Save, Search, Trash2, X } from 'lucide-react';
+import { validateVitalInputs } from '../../utils/medicalRecordValidation.mjs';
 
 const blankVitals = { height: '', weight: '', blood_pressure: '', temperature: '', heart_rate: '', spo2: '' };
 const missing = (value) => value === undefined || value === null || value === '' ? 'Chưa ghi nhận' : value;
@@ -168,41 +169,21 @@ const ExaminationPrescription = () => {
   const updatePrescription = (index, key, value) => setPrescriptions((current) => current.map((item, i) => i === index ? { ...item, [key]: value } : item));
   const removePrescription = (index) => setPrescriptions((current) => current.filter((_, i) => i !== index));
 
-  const vitalIssues = useMemo(() => {
-    const issues = [];
-    for (const [key, label] of [['height','Chiều cao'],['weight','Cân nặng'],['temperature','Nhiệt độ'],['heart_rate','Nhịp tim'],['spo2','SpO₂']]) {
-      const value = vitals[key];
-      if (value === '') continue;
-      if (!/^\d+(\.\d+)?$/.test(String(value)) || !Number.isFinite(Number(value)) || Number(value) < 0) {
-        issues.push(`${label} phải là số không âm hợp lệ.`);
-      }
-    }
-    if (vitals.spo2 !== '' && /^\d+(\.\d+)?$/.test(String(vitals.spo2)) && Number(vitals.spo2) > 100) issues.push('SpO₂ không thể lớn hơn 100%.');
-    const plausibility = [
-      ['height', 10, 250, 'Chiều cao nằm ngoài khoảng nhập liệu rộng 10–250 cm.'],
-      ['weight', 0.3, 500, 'Cân nặng nằm ngoài khoảng nhập liệu rộng 0,3–500 kg.'],
-      ['temperature', 30, 45, 'Nhiệt độ nằm ngoài khoảng nhập liệu rộng 30–45 °C.'],
-      ['heart_rate', 20, 250, 'Nhịp tim nằm ngoài khoảng nhập liệu rộng 20–250 lần/phút.'],
-      ['spo2', 70, 100, 'SpO₂ thấp hơn 70%; vui lòng kiểm tra lại số liệu.']
-    ];
-    for (const [key, min, max, message] of plausibility) {
-      const value = vitals[key];
-      if (value !== '' && /^\d+(\.\d+)?$/.test(String(value)) && (Number(value) < min || Number(value) > max) && !(key === 'spo2' && Number(value) > 100)) issues.push(message);
-    }
-    if (vitals.blood_pressure && !/^\s*\d{2,3}\s*\/\s*\d{2,3}\s*$/.test(vitals.blood_pressure)) issues.push('Huyết áp chưa theo định dạng thường dùng “tâm thu/tâm trương”; hãy kiểm tra lại.');
-    return issues;
-  }, [vitals]);
-  const hasHardVitalError = vitalIssues.some((message) => message.includes('phải là số') || message.includes('không thể lớn hơn'));
+  const vitalValidation = useMemo(() => validateVitalInputs(vitals), [vitals]);
+  const vitalIssues = vitalValidation.issues;
+  const hasHardVitalError = vitalValidation.errors.length > 0;
+  const hasVitalWarnings = vitalValidation.warnings.length > 0;
 
   const filteredIcdCodes = useMemo(() => {
     const term = icdSearch.trim().toLocaleLowerCase('vi');
     return (catalog.icd10_codes || []).filter((item) => !term || `${item.code} ${item.description}`.toLocaleLowerCase('vi').includes(term));
   }, [catalog.icd10_codes, icdSearch]);
+  const selectedIcdCode = useMemo(() => (catalog.icd10_codes || []).find((item) => item.code === form.icd10_code) || null, [catalog.icd10_codes, form.icd10_code]);
 
   const save = async (event) => {
     event.preventDefault(); setError('');
     if (hasHardVitalError) { setError('Vui lòng sửa định dạng sinh hiệu không hợp lệ trước khi lưu.'); return; }
-    if (vitalIssues.length && !vitalsAcknowledged) { setError('Hãy kiểm tra các cảnh báo sinh hiệu và xác nhận trước khi lưu.'); return; }
+    if (hasVitalWarnings && !vitalsAcknowledged) { setError('Hãy kiểm tra các cảnh báo sinh hiệu và xác nhận trước khi lưu.'); return; }
     const unavailableClinicDrug = prescriptions.find((item) => {
       if (item.dispensing_source !== 'CLINIC') return false;
       const drug = catalog.drugs.find((row) => Number(row.drug_id) === Number(item.medicine_id));
@@ -217,7 +198,8 @@ const ExaminationPrescription = () => {
     try {
       const response = await axiosClient.post('/medical-records', {
         appointment_id: Number(appointmentId),
-        ...Object.fromEntries(Object.entries(vitals).map(([key, value]) => [key, key === 'blood_pressure' ? (value || null) : safeNumber(value)])),
+        ...Object.fromEntries(Object.entries(vitals).map(([key, value]) => [key, key === 'blood_pressure' ? vitalValidation.normalizedBloodPressure : safeNumber(value)])),
+        vitals_acknowledged: vitalsAcknowledged,
         ...form,
         prescriptions: prescriptions.map((item) => ({
           medicine_id: Number(item.medicine_id), quantity: Number(item.quantity), dosage: item.dosage,
@@ -332,8 +314,8 @@ const ExaminationPrescription = () => {
       {!savedRecord && <fieldset className="contents">
         <section className="rounded-xl border border-slate-200 bg-white p-5">
           <h2 className="mb-4 text-sm font-semibold">Sinh hiệu</h2>
-          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">{[['height','Chiều cao (cm)'],['weight','Cân nặng (kg)'],['blood_pressure','Huyết áp (mmHg)'],['temperature','Nhiệt độ (°C)'],['heart_rate','Nhịp tim (lần/phút)'],['spo2','SpO₂ (%)']].map(([key,label])=><label key={key} className="space-y-1 text-sm"><span>{label}</span><input inputMode={key === 'blood_pressure' ? 'text' : 'decimal'} type="text" value={vitals[key]} onChange={(event)=>updateVital(key,event.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2" /></label>)}</div>
-          {vitalIssues.length > 0 && <div className={`mt-3 rounded-lg p-3 text-sm ${hasHardVitalError ? 'border border-rose-200 bg-rose-50 text-rose-800' : 'border border-amber-200 bg-amber-50 text-amber-900'}`}><p className="font-medium">Kiểm tra sinh hiệu</p><ul className="mt-1 list-inside list-disc">{vitalIssues.map((issue) => <li key={issue}>{issue}</li>)}</ul>{!hasHardVitalError && <label className="mt-2 flex items-start gap-2"><input type="checkbox" checked={vitalsAcknowledged} onChange={(event)=>setVitalsAcknowledged(event.target.checked)} className="mt-1" />Tôi đã kiểm tra lại số liệu nhập.</label>}</div>}
+          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">{[['height','Chiều cao (cm)'],['weight','Cân nặng (kg)'],['blood_pressure','Huyết áp (mmHg)'],['temperature','Nhiệt độ (°C)'],['heart_rate','Nhịp tim (lần/phút)'],['spo2','SpO₂ (%)']].map(([key,label])=><label key={key} className="space-y-1 text-sm"><span>{label}</span><input inputMode={key === 'blood_pressure' ? 'text' : 'decimal'} type="text" value={vitals[key]} onChange={(event)=>updateVital(key,event.target.value)} onBlur={key === 'blood_pressure' ? () => { const issue = vitalIssues.some((item) => item.field === 'blood_pressure' && item.type === 'error'); if (!issue && vitalValidation.normalizedBloodPressure && vitalValidation.normalizedBloodPressure !== vitals.blood_pressure) updateVital(key, vitalValidation.normalizedBloodPressure); } : undefined} aria-invalid={vitalIssues.some((item) => item.field === key && item.type === 'error')} className="w-full rounded-lg border border-slate-300 px-3 py-2" /></label>)}</div>
+          {vitalIssues.length > 0 && <div className={`mt-3 rounded-lg p-3 text-sm ${hasHardVitalError ? 'border border-rose-200 bg-rose-50 text-rose-800' : 'border border-amber-200 bg-amber-50 text-amber-900'}`}><p className="font-medium">Kiểm tra sinh hiệu</p><ul className="mt-1 list-inside list-disc">{vitalIssues.map((issue) => <li key={`${issue.field}-${issue.code}`}>{issue.message}</li>)}</ul>{!hasHardVitalError && hasVitalWarnings && <label className="mt-2 flex items-start gap-2"><input type="checkbox" checked={vitalsAcknowledged} onChange={(event)=>setVitalsAcknowledged(event.target.checked)} className="mt-1" />Tôi đã kiểm tra lại số liệu nhập.</label>}</div>}
           <p className="mt-2 text-xs text-slate-500">Cảnh báo chỉ kiểm tra định dạng và giá trị nhập liệu rộng, không tự sửa số liệu hoặc áp ngưỡng theo tuổi.</p>
           <label className="mt-4 block space-y-1 text-sm"><span>Triệu chứng và diễn biến</span><textarea value={form.symptoms} onChange={(event)=>updateForm('symptoms',event.target.value)} rows={3} className="w-full rounded-lg border border-slate-300 px-3 py-2" /></label>
         </section>
@@ -343,7 +325,7 @@ const ExaminationPrescription = () => {
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="space-y-1 text-sm"><span>Chẩn đoán ban đầu</span><input value={form.initial_diagnosis} onChange={(event)=>updateForm('initial_diagnosis',event.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2" /></label>
             <label className="space-y-1 text-sm"><span>Chẩn đoán cuối cùng *</span><input required value={form.final_diagnosis} onChange={(event)=>updateForm('final_diagnosis',event.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2" /></label>
-            <div className="space-y-2 text-sm sm:col-span-2"><label htmlFor="icd10-search">Tìm mã ICD-10 theo mã hoặc tên bệnh (có thể để trống)</label><input id="icd10-search" value={icdSearch} onChange={(event)=>setIcdSearch(event.target.value)} placeholder="Ví dụ: I10 hoặc hypertension" className="w-full rounded-lg border border-slate-300 px-3 py-2" /><select value={form.icd10_code} onChange={(event)=>updateForm('icd10_code',event.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2"><option value="">Không chọn mã ICD-10</option>{form.icd10_code && !catalog.icd10_codes.some((item)=>item.code === form.icd10_code) && <option value={form.icd10_code}>{form.icd10_code} · Mã đang lưu, chưa có trong danh mục</option>}{filteredIcdCodes.map((item)=><option key={item.code} value={item.code}>{item.code} · {item.description}</option>)}</select>{catalog.icd10_codes.length === 0 && <p className="rounded-lg bg-amber-50 p-3 text-amber-900">Danh mục ICD-10 hiện chưa có mã. Không có mã nào được suy đoán hoặc tự chọn; quản trị viên cần nạp danh mục ICD-10 đáng tin cậy.</p>}</div>
+            <div className="space-y-2 text-sm sm:col-span-2"><label htmlFor="icd10-search">Tìm mã ICD-10 theo mã hoặc tên bệnh (có thể để trống)</label><input id="icd10-search" value={icdSearch} onChange={(event)=>setIcdSearch(event.target.value)} placeholder="Ví dụ: I10 hoặc hypertension" className="w-full rounded-lg border border-slate-300 px-3 py-2" /><select value={form.icd10_code} onChange={(event)=>updateForm('icd10_code',event.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2"><option value="">Không chọn mã ICD-10</option>{form.icd10_code && !catalog.icd10_codes.some((item)=>item.code === form.icd10_code) && <option value={form.icd10_code}>{form.icd10_code} · Mã đang lưu, chưa có trong danh mục</option>}{filteredIcdCodes.map((item)=><option key={item.code} value={item.code}>{item.code} · {item.description}</option>)}</select>{selectedIcdCode && <p className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sky-950"><span className="font-semibold">Mã đang chọn:</span> {selectedIcdCode.code} · {selectedIcdCode.description}<span className="mt-1 block text-xs text-sky-800">Bác sĩ đối chiếu mã và tên bệnh với chẩn đoán đã nhập. Hệ thống chỉ xác nhận mã có trong danh mục, không kết luận phù hợp chuyên môn.</span></p>}{catalog.icd10_codes.length === 0 && <p className="rounded-lg bg-amber-50 p-3 text-amber-900">Danh mục ICD-10 hiện chưa có mã. Không có mã nào được suy đoán hoặc tự chọn; quản trị viên cần nạp danh mục ICD-10 đáng tin cậy.</p>}</div>
             <label className="space-y-1 text-sm sm:col-span-2"><span>Kế hoạch điều trị</span><textarea value={form.treatment_plan} onChange={(event)=>updateForm('treatment_plan',event.target.value)} rows={2} className="w-full rounded-lg border border-slate-300 px-3 py-2" /></label>
             <label className="space-y-1 text-sm sm:col-span-2"><span>Lời dặn</span><textarea value={form.advice} onChange={(event)=>updateForm('advice',event.target.value)} rows={2} className="w-full rounded-lg border border-slate-300 px-3 py-2" /></label>
           </div>
@@ -373,7 +355,7 @@ const ExaminationPrescription = () => {
         </section>
 
         <section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="mb-3 text-sm font-semibold">Tái khám</h2><div className="grid gap-3 sm:grid-cols-2"><label className="space-y-1 text-sm"><span>Ngày tái khám (nếu cần)</span><input type="date" value={form.follow_up_date} onChange={(event)=>updateForm('follow_up_date',event.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2" /></label><label className="space-y-1 text-sm"><span>Hướng dẫn</span><input value={form.follow_up_notes} onChange={(event)=>updateForm('follow_up_notes',event.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2" /></label></div></section>
-        <div className="flex justify-end"><button disabled={saving || hasHardVitalError || (vitalIssues.length > 0 && !vitalsAcknowledged)} className="inline-flex items-center gap-2 rounded-lg bg-sky-700 px-5 py-3 text-sm font-medium text-white hover:bg-sky-800 disabled:opacity-50"><Save className="h-4 w-4"/>{saving?'Đang lưu…':'Hoàn tất khám và lưu bệnh án'}</button></div>
+        <div className="flex justify-end"><button disabled={saving || hasHardVitalError || (hasVitalWarnings && !vitalsAcknowledged)} className="inline-flex items-center gap-2 rounded-lg bg-sky-700 px-5 py-3 text-sm font-medium text-white hover:bg-sky-800 disabled:opacity-50"><Save className="h-4 w-4"/>{saving?'Đang lưu…':'Hoàn tất khám và lưu bệnh án'}</button></div>
       </fieldset>}
       {savedRecord?.patient_name && <article id="print-document" className="hidden print:block"><h1 className="text-center text-lg font-bold">PHIẾU KHÁM BỆNH</h1><p>Bệnh nhân: {savedRecord.patient_name} · Ngày khám: {dateLabel(savedRecord.appointment_date)}</p><p>Bác sĩ: {savedRecord.doctor_name} · Dịch vụ: {appointment.service_name || 'Khám'} · Phòng: {appointment.room_name || appointment.room_number || 'Chưa ghi nhận'}</p><h2>Sinh hiệu</h2>{savedVitals.map(([label,value,unit])=><p key={label}>{label}: {missing(value)}{value !== null && value !== undefined && value !== '' ? ` ${unit}` : ''}</p>)}<h2>Khám và chẩn đoán</h2><p>Triệu chứng: {missing(savedRecord.symptoms)}</p><p>Chẩn đoán ban đầu: {missing(savedRecord.initial_diagnosis)}</p><p>Chẩn đoán cuối: {missing(savedRecord.final_diagnosis)}</p><p>ICD-10: {savedRecord.icd10_code ? `${savedRecord.icd10_code} · ${savedRecord.icd10_description || 'Chưa có tên trong danh mục hiện tại'}` : 'Không chỉ định'}</p><p>Kế hoạch điều trị: {missing(savedRecord.treatment_plan)}</p><p>Lời dặn: {missing(savedRecord.advice)}</p><h2>Đơn thuốc</h2>{savedRecord.prescriptions?.map((item)=><p key={item.prescription_id}>{item.medicine_name} · {item.quantity} {item.unit_name || ''} · {item.dosage} · {item.duration} ngày · {mealLabel(item.meal_name)} · {item.instructions || 'Chưa ghi nhận'}</p>)}<p>Tái khám: {dateLabel(savedRecord.follow_up_date)} · {savedRecord.follow_up_notes || 'Chưa ghi nhận'}</p><div className="mt-12 flex justify-end">Bác sĩ ký tên</div><style>{'@media print{body *{visibility:hidden}#print-document,#print-document *{visibility:visible}#print-document{position:fixed;inset:0;display:block!important;overflow:auto;background:#fff;padding:24px}}'}</style></article>}
     </form>

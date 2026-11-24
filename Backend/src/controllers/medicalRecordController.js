@@ -1,31 +1,40 @@
 const { pool } = require('../config/db');
 const { syncInvoiceNotification, createMedicalRecordNotification, emitNotificationsUpdated } = require('../utils/invoiceNotifications');
 const { decorateFollowUp } = require('../utils/followUps');
+const { validateVitalSigns, normalizeIcd10Code, icd10CodeExists } = require('../utils/medicalRecordValidation');
 
 const clinicTodayISO = () => new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit'
 }).format(new Date());
 
 const createMedicalRecord = async (req, res, next) => {
+  const body = req.body || {};
+  const {
+    appointment_id, height, weight, blood_pressure, temperature, heart_rate, spo2,
+    symptoms, initial_diagnosis, final_diagnosis, icd10_code, treatment_plan, advice,
+    follow_up_date, follow_up_notes, prescriptions = []
+  } = body;
+  if (!Number.isInteger(Number(appointment_id)) || typeof final_diagnosis !== 'string' || !final_diagnosis.trim() || !Array.isArray(prescriptions)) {
+    return res.status(400).json({ success: false, message: 'Lịch hẹn, chẩn đoán và danh sách thuốc không hợp lệ.' });
+  }
+
+  const icd10 = normalizeIcd10Code(icd10_code);
+  if (icd10.issue) return res.status(400).json({ success: false, message: icd10.issue.message, code: icd10.issue.code, issues: [icd10.issue] });
+  const vitalValidation = validateVitalSigns(body, { acknowledged: body.vitals_acknowledged === true });
+  if (vitalValidation.errors.length) {
+    return res.status(400).json({ success: false, code: 'INVALID_VITALS', message: 'Vui lòng sửa định dạng sinh hiệu không hợp lệ.', issues: vitalValidation.errors });
+  }
+  if (vitalValidation.requiresAcknowledgement) {
+    return res.status(400).json({ success: false, code: 'VITALS_ACKNOWLEDGEMENT_REQUIRED', message: 'Hãy kiểm tra và xác nhận các cảnh báo sinh hiệu trước khi lưu.', issues: vitalValidation.warnings });
+  }
+
   const connection = await pool.getConnection();
   try {
-    const {
-      appointment_id, height, weight, blood_pressure, temperature, heart_rate, spo2,
-      symptoms, initial_diagnosis, final_diagnosis, icd10_code, treatment_plan, advice,
-      follow_up_date, follow_up_notes, prescriptions = []
-    } = req.body;
-    if (!Number.isInteger(Number(appointment_id)) || typeof final_diagnosis !== 'string' || !final_diagnosis.trim() || !Array.isArray(prescriptions)) {
-      return res.status(400).json({ success: false, message: 'Lịch hẹn, chẩn đoán và danh sách thuốc không hợp lệ.' });
-    }
-    for (const value of [height, weight, temperature, heart_rate, spo2]) {
-      if (value !== undefined && value !== null && value !== '' && (Number(value) < 0 || !Number.isFinite(Number(value)))) {
-        return res.status(400).json({ success: false, message: 'Sinh hiệu phải là số không âm hợp lệ.' });
-      }
-    }
-    if (spo2 !== undefined && spo2 !== null && spo2 !== '' && Number(spo2) > 100) {
-      return res.status(400).json({ success: false, message: 'SpO₂ phải nằm trong khoảng 0–100%.' });
-    }
     await connection.beginTransaction();
+    if (icd10.code && !(await icd10CodeExists(connection, icd10.code))) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, code: 'ICD10_NOT_FOUND', message: 'Mã ICD-10 không tồn tại trong danh mục.' });
+    }
     const [lockedInvoices] = await connection.query(
       'SELECT id, service_fee, medicine_fee FROM invoices WHERE appointment_id = ? FOR UPDATE', [appointment_id]
     );
@@ -45,9 +54,9 @@ const createMedicalRecord = async (req, res, next) => {
        temperature, heart_rate, spo2, symptoms, initial_diagnosis, final_diagnosis, icd10_code, treatment_plan, advice)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [appointment.appointment_id, appointment.doctor_id, appointment.patient_id,
-        height === '' || height == null ? null : Number(height), weight === '' || weight == null ? null : Number(weight), blood_pressure || null,
-        temperature === '' || temperature == null ? null : Number(temperature), heart_rate === '' || heart_rate == null ? null : Number(heart_rate), spo2 === '' || spo2 == null ? null : Number(spo2),
-        symptoms || null, initial_diagnosis || null, final_diagnosis.trim(), icd10_code || null, treatment_plan || null, advice || null]
+        vitalValidation.normalized.height, vitalValidation.normalized.weight, vitalValidation.normalized.blood_pressure,
+        vitalValidation.normalized.temperature, vitalValidation.normalized.heart_rate, vitalValidation.normalized.spo2,
+        symptoms || null, initial_diagnosis || null, final_diagnosis.trim(), icd10.code, treatment_plan || null, advice || null]
     );
     const recordId = recordResult.insertId;
 
