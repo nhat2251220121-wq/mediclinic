@@ -3,9 +3,10 @@ import { Send, Bot, ChevronRight, Minimize2, Stethoscope } from 'lucide-react';
 import axiosClient from '../../api/axiosClient';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { formatSymptomReply, getAssistantNavigationIntent, getPatientChatIntent, isDirectServiceLookupIntent } from '../../utils/symptomAssistant.mjs';
+import { getAssistantNavigationIntent, getPatientChatIntent, isDirectServiceLookupIntent, normalizeSymptomTriageResult } from '../../utils/symptomAssistant.mjs';
 import { getServiceBookingNavigation, normalizeServiceAdviceResult } from '../../utils/serviceAdvice.mjs';
 import ImageWithFallback from './ImageWithFallback';
+import StatusBadge from './StatusBadge';
 
 const AIChatWidget = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -34,13 +35,16 @@ const AIChatWidget = () => {
     include_doctors: isAuthenticated && user?.role === 'PATIENT'
   });
 
-  const addServiceAdviceMessage = (data, message = 'Dưới đây là thông tin từ danh mục dịch vụ đang hoạt động.') => {
+  const addServiceAdviceMessage = (data, message = 'Dưới đây là thông tin từ danh mục dịch vụ đang hoạt động.', triageResult = null) => {
     const result = normalizeServiceAdviceResult(data, message);
+    const triage = normalizeSymptomTriageResult(triageResult);
     setEmergencyBlocked(result.emergency);
     setMessages((prev) => [...prev, {
       id: Date.now() + 1,
       sender: 'ai',
       text: result.message,
+      ...(triage ? { triage } : {}),
+      emergency: result.emergency,
       services: result.services,
       doctorsIncluded: result.doctorsIncluded,
       patientDoctorAccess: isAuthenticated && user?.role === 'PATIENT',
@@ -198,9 +202,11 @@ const AIChatWidget = () => {
       // The verified service-advice response is the sole source for service text,
       // card data and booking eligibility.
       let classification = null;
+      let classificationMessage = '';
       try {
         const classificationResponse = await axiosClient.post('/ai/classify-symptom', { symptoms: userText });
-        classification = classificationResponse?.data || null;
+        classificationMessage = typeof classificationResponse?.message === 'string' ? classificationResponse.message : '';
+        classification = normalizeSymptomTriageResult(classificationResponse?.success ? classificationResponse?.data : null);
       } catch {
         // Service lookup still runs; that endpoint repeats emergency checks and
         // can safely continue without a specialty hint.
@@ -211,14 +217,16 @@ const AIChatWidget = () => {
         setMessages((prev) => [...prev, {
           id: Date.now() + 1,
           sender: 'ai',
-          text: formatSymptomReply(classification),
+          text: classificationMessage || classification.urgency_text || classification.initial_advice,
+          triage: classification,
+          emergency: true,
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }]);
         return;
       }
 
       const serviceResponse = await requestServiceAdvice(userText, classification?.specialty_id || null);
-      addServiceAdviceMessage(serviceResponse.data, serviceResponse.message);
+      addServiceAdviceMessage(serviceResponse.data, serviceResponse.message, classification || {});
     } catch (err) {
       setRetryText(userText);
       setMessages((prev) => [
@@ -347,6 +355,29 @@ const AIChatWidget = () => {
                   >
                     {msg.text}
                   </div>
+
+                  {msg.triage && <section className={`min-w-0 overflow-hidden rounded-xl border p-3 text-xs shadow-sm ${msg.triage.urgency_level === 'EMERGENCY' ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-white'}`} aria-label="Kết quả định hướng triệu chứng">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h4 className="font-bold text-slate-900">Định hướng triệu chứng</h4>
+                      {msg.triage.urgency_level
+                        ? <StatusBadge status={msg.triage.urgency_level} type="urgency" />
+                        : <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">Chưa xác định mức độ khẩn cấp</span>}
+                    </div>
+                    <p className="mt-2 break-words text-slate-700"><span className="font-semibold">Chuyên khoa gợi ý:</span> {msg.triage.predicted_specialty || 'Chưa xác định'}</p>
+                    {msg.triage.urgency_text && <p className="mt-1 break-words leading-relaxed text-slate-700">{msg.triage.urgency_text}</p>}
+                    {msg.triage.initial_advice && <p className="mt-1 break-words leading-relaxed text-slate-700">{msg.triage.initial_advice}</p>}
+                    {msg.triage.follow_up_questions.length > 0 && <div className="mt-2 rounded-lg bg-slate-50 p-2.5">
+                      <p className="font-semibold text-slate-700">Câu hỏi cần làm rõ</p>
+                      <ul className="mt-1 list-disc space-y-1 pl-4 text-slate-600">{msg.triage.follow_up_questions.map((question, index) => <li key={`${index}-${question}`}>{question}</li>)}</ul>
+                    </div>}
+                    {msg.triage.disclaimer && <p className="mt-2 border-t border-slate-200 pt-2 leading-relaxed text-slate-500">{msg.triage.disclaimer}</p>}
+                    {msg.triage.recommendation_source && <p className="mt-1 text-[10px] text-slate-400">Nguồn định hướng: {msg.triage.recommendation_source === 'RULE_BASED' ? 'quy tắc dự phòng' : 'AI'}</p>}
+                  </section>}
+
+                  {msg.emergency && !msg.triage && <div role="alert" className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-2.5 text-xs text-red-900">
+                    <StatusBadge status="EMERGENCY" type="urgency" />
+                    <span>Không tiếp tục đặt lịch thông thường.</span>
+                  </div>}
 
                   {msg.doctor && <article className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white p-3 text-xs shadow-sm">
                     <div className="flex min-w-0 items-start gap-3">

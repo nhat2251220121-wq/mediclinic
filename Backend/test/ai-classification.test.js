@@ -29,6 +29,23 @@ const makeCandidate = (overrides = {}) => ({
   ...overrides
 });
 
+test('triage display normalization uses API values and leaves missing or invalid urgency unknown', async () => {
+  const { normalizeSymptomTriageResult } = await import('../../Frontend/src/utils/symptomAssistant.mjs');
+  const normalized = normalizeSymptomTriageResult(makeCandidate({ urgency_level: 'URGENT' }));
+  assert.equal(normalized.predicted_specialty, 'Da liễu');
+  assert.equal(normalized.urgency_level, 'URGENT');
+  assert.equal(normalized.recommendation_source, 'AI');
+
+  for (const result of [null, {}, makeCandidate({ urgency_level: 'UNVERIFIED' })]) {
+    const triage = normalizeSymptomTriageResult(result);
+    if (result === null) {
+      assert.equal(triage, null);
+    } else {
+      assert.equal(triage.urgency_level, null);
+    }
+  }
+});
+
 test('chấp nhận đầu ra đủ schema, chỉ giữ chuyên khoa hoạt động và chuẩn hóa source', async () => {
   const classifier = createSymptomClassifier({ provider: async () => makeCandidate(), logger: {} });
   const result = await classifier('Da bị ngứa', specialties);

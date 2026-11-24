@@ -37,8 +37,9 @@ const StatusBadge = ({ status, type = 'appointment' }) => {
       switch (status) {
         case 'ROUTINE':
         case 'LOW':
-          return { label: 'Bình thường', bg: 'bg-slate-100 text-slate-700 border-slate-200' };
+          return { label: 'Khám thông thường', bg: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
         case 'URGENT':
+          return { label: 'Cần khám sớm', bg: 'bg-orange-100 text-orange-800 border-orange-200' };
         case 'MEDIUM':
           return { label: 'Cần chú ý', bg: 'bg-amber-100 text-amber-800 border-amber-200' };
         case 'HIGH':

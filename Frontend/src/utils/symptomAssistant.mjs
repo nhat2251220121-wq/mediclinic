@@ -8,6 +8,29 @@ export const isSymptomBookingAllowed = (result) => Boolean(
   && result.predicted_specialty.trim()
 );
 
+const VALID_URGENCY_LEVELS = new Set(['ROUTINE', 'URGENT', 'EMERGENCY']);
+
+export const normalizeSymptomTriageResult = (result) => {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return null;
+
+  return {
+    predicted_specialty: typeof result.predicted_specialty === 'string' && result.predicted_specialty.trim()
+      ? result.predicted_specialty.trim()
+      : null,
+    specialty_id: Number.isInteger(result.specialty_id) ? result.specialty_id : null,
+    recommendation_source: ['AI', 'RULE_BASED'].includes(result.recommendation_source)
+      ? result.recommendation_source
+      : null,
+    urgency_level: VALID_URGENCY_LEVELS.has(result.urgency_level) ? result.urgency_level : null,
+    urgency_text: typeof result.urgency_text === 'string' ? result.urgency_text.trim() : '',
+    initial_advice: typeof result.initial_advice === 'string' ? result.initial_advice.trim() : '',
+    follow_up_questions: Array.isArray(result.follow_up_questions)
+      ? result.follow_up_questions.filter((question) => typeof question === 'string' && question.trim()).slice(0, 3)
+      : [],
+    disclaimer: typeof result.disclaimer === 'string' ? result.disclaimer.trim() : ''
+  };
+};
+
 const normalizeMessage = (value) => String(value || '')
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
