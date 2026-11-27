@@ -35,6 +35,15 @@ const StatusBadge = ({ status, type = 'appointment' }) => {
 
     if (type === 'urgency') {
       switch (status) {
+        case 'NEEDS_INFORMATION':
+          return { label: 'Chưa đủ thông tin', bg: 'bg-slate-100 text-slate-700 border-slate-200' };
+        case 'CLARIFY':
+          return { label: 'Cần làm rõ', bg: 'bg-amber-100 text-amber-800 border-amber-200' };
+        case 'ASSESSED':
+          return { label: 'Đã đủ thông tin', bg: 'bg-teal-100 text-teal-800 border-teal-200' };
+        case null:
+        case undefined:
+          return { label: 'Chưa đủ thông tin', bg: 'bg-slate-100 text-slate-700 border-slate-200' };
         case 'ROUTINE':
         case 'LOW':
           return { label: 'Khám thông thường', bg: 'bg-emerald-100 text-emerald-800 border-emerald-200' };

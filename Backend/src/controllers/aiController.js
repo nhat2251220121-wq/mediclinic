@@ -36,8 +36,9 @@ const createAIController = ({ db = pool, classify = classifySymptomWithAI } = {}
               ...result,
               predicted_specialty: null,
               specialty_id: null,
+              assessment_status: 'NEEDS_INFORMATION',
               recommendation_source: 'RULE_BASED',
-              urgency_level: result.urgency_level === 'EMERGENCY' ? 'EMERGENCY' : 'ROUTINE',
+              urgency_level: result.urgency_level === 'EMERGENCY' ? 'EMERGENCY' : null,
               urgency_text: result.urgency_level === 'EMERGENCY'
                 ? result.urgency_text
                 : 'Chưa thể gợi ý chuyên khoa phù hợp từ danh mục đang hoạt động.',

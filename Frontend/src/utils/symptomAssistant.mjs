@@ -1,6 +1,7 @@
 export const isSymptomBookingAllowed = (result) => Boolean(
   result?.booking_allowed
-  && result?.urgency_level !== 'EMERGENCY'
+  && (!result?.assessment_status || result.assessment_status === 'ASSESSED')
+  && ['ROUTINE', 'URGENT'].includes(result?.urgency_level)
   && result?.specialty_id !== null
   && result?.specialty_id !== undefined
   && Number.isInteger(result?.specialty_id)
@@ -9,6 +10,15 @@ export const isSymptomBookingAllowed = (result) => Boolean(
 );
 
 const VALID_URGENCY_LEVELS = new Set(['ROUTINE', 'URGENT', 'EMERGENCY']);
+const VALID_ASSESSMENT_STATUSES = new Set(['NEEDS_INFORMATION', 'CLARIFY', 'ASSESSED', 'EMERGENCY']);
+
+export const getSymptomAssessmentStatus = (result) => {
+  if (result?.urgency_level === 'EMERGENCY') return 'EMERGENCY';
+  if (VALID_ASSESSMENT_STATUSES.has(result?.assessment_status)) return result.assessment_status;
+  if (result?.predicted_specialty && (result?.booking_allowed === false || result?.urgency_level === null)) return 'CLARIFY';
+  if (!result?.predicted_specialty || result?.booking_allowed !== true) return 'NEEDS_INFORMATION';
+  return 'ASSESSED';
+};
 
 export const normalizeSymptomTriageResult = (result) => {
   if (!result || typeof result !== 'object' || Array.isArray(result)) return null;
@@ -21,13 +31,15 @@ export const normalizeSymptomTriageResult = (result) => {
     recommendation_source: ['AI', 'RULE_BASED'].includes(result.recommendation_source)
       ? result.recommendation_source
       : null,
+    assessment_status: getSymptomAssessmentStatus(result),
     urgency_level: VALID_URGENCY_LEVELS.has(result.urgency_level) ? result.urgency_level : null,
     urgency_text: typeof result.urgency_text === 'string' ? result.urgency_text.trim() : '',
     initial_advice: typeof result.initial_advice === 'string' ? result.initial_advice.trim() : '',
     follow_up_questions: Array.isArray(result.follow_up_questions)
       ? result.follow_up_questions.filter((question) => typeof question === 'string' && question.trim()).slice(0, 3)
       : [],
-    disclaimer: typeof result.disclaimer === 'string' ? result.disclaimer.trim() : ''
+    disclaimer: typeof result.disclaimer === 'string' ? result.disclaimer.trim() : '',
+    booking_allowed: result.booking_allowed === true
   };
 };
 
@@ -85,13 +97,17 @@ export const isServiceAdviceIntent = (message) => {
     .some((phrase) => text.includes(phrase));
 };
 
-export const isDirectServiceLookupIntent = (message) => {
-  return isServiceAdviceIntent(message);
+const containsSymptomSignal = (message) => {
+  const text = normalizeMessage(message);
+  return /\b(dau|ngua|noi ban|phat ban|man do|mun|ho|sot|met moi|chong mat|kho tho|te yeu|tim dap nhanh|khong khoe|khong biet minh bi gi|khong biet bi benh gi)\b/.test(text)
+    || (/\bda mat\b/.test(text) && /\b(xau|khong dep|khong on|co van de)\b/.test(text));
 };
 
-export const shouldRequestServiceAdvice = (_question, result) => Boolean(
-  result && result.urgency_level !== 'EMERGENCY'
-);
+export const isDirectServiceLookupIntent = (message) =>
+  isServiceAdviceIntent(message) && !containsSymptomSignal(message);
+
+export const shouldRequestServiceAdvice = (_question, result) =>
+  isSymptomBookingAllowed(result);
 
 export const formatSymptomReply = (result) => {
   if (result?.urgency_level === 'EMERGENCY') {

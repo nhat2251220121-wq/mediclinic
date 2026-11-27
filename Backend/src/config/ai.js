@@ -7,7 +7,12 @@ const RESPONSE_SCHEMA = {
     predicted_specialty: { anyOf: [{ type: 'string' }, { type: 'null' }] },
     specialty_id: { anyOf: [{ type: 'integer' }, { type: 'null' }] },
     recommendation_source: { type: 'string', enum: ['AI', 'RULE_BASED'] },
-    urgency_level: { type: 'string', enum: ['ROUTINE', 'URGENT', 'EMERGENCY'] },
+    urgency_level: {
+      anyOf: [
+        { type: 'string', enum: ['ROUTINE', 'URGENT', 'EMERGENCY'] },
+        { type: 'null' }
+      ]
+    },
     urgency_text: { type: 'string' },
     initial_advice: { type: 'string' },
     follow_up_questions: {
@@ -39,6 +44,8 @@ const normalize = (value) =>
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
 
 const findSpecialtyByTerms = (specialties, terms) =>
   specialties.find((specialty) =>
@@ -50,18 +57,40 @@ const matchesRuleKeyword = (text, keyword) => {
 }
 
 const EMERGENCY_PATTERNS = [
-  /dau nguc.{0,35}(du doi|dữ dội|rat du doi)/,
-  /((kho tho|tho kho).{0,35}(nang|du doi|nghiem trong)|khong (tho duoc|the tho)|ngat tho)/,
-  /(tim|moi|da).{0,25}(tai|xanh|tim tai)/,
-  /(co giat|dong kinh dang co giat)/,
-  /(bat tinh|hon me|mat y thuc|khong tinh|ngat xiu)/,
-  /(dot quy|yeu liet dot ngot|liet nua nguoi|yeu mot ben|meo mieng|noi kho dot ngot|noi ngo ngu|liem luoi)/,
-  /(chay mau).{0,35}(khong cam|khong ngung|nhieu|du doi|khong dung|o at|at at)/
+  { pattern: /\bdau nguc\b.{0,35}\b(?:du doi|rat du doi)\b/ },
+  { pattern: /\b(?:kho tho|tho kho)\b.{0,35}\b(?:nang|du doi|nghiem trong)\b/ },
+  { pattern: /\b(?:moi|da)\s+(?:tim|xanh)\b|\btim tai\b/ },
+  { pattern: /\b(?:co giat|dong kinh dang co giat)\b/ },
+  { pattern: /\b(?:bat tinh|hon me|mat y thuc|ngat xiu)\b/ },
+  { pattern: /\bkhong tinh\b/, ignoreNegation: true },
+  { pattern: /\b(?:dot quy|yeu liet dot ngot|liet nua nguoi|yeu mot ben|meo mieng|noi kho dot ngot|noi ngo ngu|liem luoi)\b/ },
+  { pattern: /\bchay mau\b.{0,35}\b(?:khong cam|khong ngung|nhieu|du doi|khong dung|o at|at at)\b/ },
+  { pattern: /\bkhong\s+(?:tho duoc|the tho)\b/, ignoreNegation: true },
+  { pattern: /\bngat tho\b/ }
 ]
 
+const NEGATION_AT_END = /(?:^|\s)(?:khong|chua|khong bi|khong co|khong phai|khong con)(?:\s+[a-z0-9]+){0,4}\s*$/
+const splitIntoClauses = (text) => text.split(/[,;.!?]|\b(?:nhung|tuy nhien|con)\b/).map((part) => part.trim()).filter(Boolean)
+
 const isEmergency = (symptoms) => {
+  const clauses = splitIntoClauses(normalize(symptoms))
+  return clauses.some((clause) => EMERGENCY_PATTERNS.some(({ pattern, ignoreNegation }) => {
+    const match = pattern.exec(clause)
+    if (!match) return false
+    return ignoreNegation || !NEGATION_AT_END.test(clause.slice(0, match.index))
+  }))
+}
+
+const isGenericPainOnly = (symptoms) => {
+  const text = normalize(symptoms).replace(/\s+(?:(?:thi|toi) )?(?:(?:nen|can) )?(?:kham(?: gi| khoa nao| dich vu nao)?|di kham o dau)$/, '')
+  return /^(?:(?:toi|minh) )?(?:dang )?(?:bi )?dau (?:tai|chan|tay|dau|bung|lung|co|vai|goi|khop|hong|nguc)(?: (?:(?:rat )?(?:nhe|hoi)(?: thoi)?|hoi nhe|mot chut|thoi))?$/.test(text)
+}
+
+const isInsufficientSymptomDetail = (symptoms) => {
   const text = normalize(symptoms)
-  return EMERGENCY_PATTERNS.some((pattern) => pattern.test(text))
+  if (/\b(?:khong biet minh bi gi|khong biet bi benh gi|khong ro minh bi gi|cam thay trong nguoi khong khoe|trong nguoi khong khoe)\b/.test(text)
+    || /^(?:(?:toi|minh) )?khong khoe$/.test(text)) return true
+  return isGenericPainOnly(text)
 }
 
 const isMedicationRequest = (symptoms) => {
@@ -89,6 +118,7 @@ const isVagueSkinConcern = (symptoms) => {
 const emergencyResult = () => ({
   predicted_specialty: null,
   specialty_id: null,
+  assessment_status: 'EMERGENCY',
   recommendation_source: 'RULE_BASED',
   urgency_level: 'EMERGENCY',
   urgency_text:
@@ -103,12 +133,15 @@ const emergencyResult = () => ({
 const noSpecialtyResult = ({
   initialAdvice,
   questions = [],
+  specialty = null,
+  assessmentStatus = specialty ? 'CLARIFY' : 'NEEDS_INFORMATION',
   urgencyText = 'Chưa đủ thông tin để gợi ý chuyên khoa phù hợp.'
 } = {}) => ({
-  predicted_specialty: null,
-  specialty_id: null,
+  predicted_specialty: specialty?.name || null,
+  specialty_id: specialty ? Number(specialty.id) : null,
+  assessment_status: assessmentStatus,
   recommendation_source: 'RULE_BASED',
-  urgency_level: 'ROUTINE',
+  urgency_level: null,
   urgency_text: urgencyText,
   initial_advice:
     initialAdvice ||
@@ -165,6 +198,26 @@ const classifyByRules = (symptoms, specialties) => {
       ]
     })
   }
+  if (isInsufficientSymptomDetail(text)) {
+    let preliminarySpecialty = null
+    for (const group of RULE_GROUPS) {
+      if (group.keys.some((key) => matchesRuleKeyword(text, key))) {
+        preliminarySpecialty = findSpecialtyByTerms(specialties, group.terms)
+        if (preliminarySpecialty) break
+      }
+    }
+    return noSpecialtyResult({
+      specialty: preliminarySpecialty,
+      assessmentStatus: isGenericPainOnly(text) ? 'CLARIFY' : 'NEEDS_INFORMATION',
+      urgencyText: 'Chưa đủ thông tin để đánh giá mức độ cần chú ý.',
+      initialAdvice: 'Mô tả hiện tại chưa đủ chi tiết để xác định mức độ cần chú ý. Hãy bổ sung thông tin để được định hướng phù hợp hơn.',
+      questions: [
+        'Triệu chứng ở vị trí nào và bắt đầu từ khi nào?',
+        'Mức độ ra sao, có tăng lên hoặc ảnh hưởng sinh hoạt không?',
+        'Bạn có dấu hiệu nào khác đi kèm không?'
+      ]
+    })
+  }
   let selected = null
   for (const group of RULE_GROUPS) {
     if (!group.keys.some((key) => matchesRuleKeyword(text, key))) continue
@@ -184,6 +237,7 @@ const classifyByRules = (symptoms, specialties) => {
   return {
     predicted_specialty: selected?.name || null,
     specialty_id: selected ? Number(selected.id) : null,
+    assessment_status: 'ASSESSED',
     recommendation_source: 'RULE_BASED',
     urgency_level: 'ROUTINE',
     urgency_text:
@@ -209,7 +263,7 @@ const isValidContract = (value) => {
       value.predicted_specialty === null) &&
     (Number.isInteger(value.specialty_id) || value.specialty_id === null) &&
     ['AI', 'RULE_BASED'].includes(value.recommendation_source) &&
-    ['ROUTINE', 'URGENT', 'EMERGENCY'].includes(value.urgency_level) &&
+    (value.urgency_level === null || ['ROUTINE', 'URGENT', 'EMERGENCY'].includes(value.urgency_level)) &&
     ['urgency_text', 'initial_advice', 'disclaimer'].every(
       (key) => typeof value[key] === 'string'
     ) &&
@@ -262,7 +316,7 @@ const requestOpenAI = async ({
             {
               role: 'system',
               content:
-                'Bạn chỉ hỗ trợ định hướng chuyên khoa dựa trên triệu chứng/lý do khám. Nếu người dùng hỏi việc ngoài phạm vi, lịch khám, lịch trống, hóa đơn hoặc thanh toán, không giả vờ tra cứu; trả specialty và ID là null, hỏi người dùng mô tả triệu chứng hoặc hướng họ đến trang chức năng phù hợp nếu được chỉ dẫn. Không chẩn đoán, không nêu bệnh có thể mắc, không kê đơn hoặc liều thuốc. Chỉ chọn specialty đang hoạt động trong danh sách; điền đúng ID. Không yêu cầu tuổi, giới tính hay thông tin định danh. Nếu thiếu thông tin, đặt tối đa 3 câu hỏi làm rõ. Khi không phù hợp danh sách, specialty và ID phải là null. Trả lời ngắn gọn, lịch sự bằng tiếng Việt. EMERGENCY chỉ dùng cho dấu hiệu cấp cứu; booking_allowed chỉ true khi có chuyên khoa đang hoạt động được xác định và trường hợp không khẩn cấp.'
+                'Bạn chỉ hỗ trợ định hướng chuyên khoa dựa trên triệu chứng/lý do khám. Nếu người dùng hỏi việc ngoài phạm vi, lịch khám, lịch trống, hóa đơn hoặc thanh toán, không giả vờ tra cứu; trả specialty và ID là null, hỏi người dùng mô tả triệu chứng hoặc hướng họ đến trang chức năng phù hợp nếu được chỉ dẫn. Không chẩn đoán, không nêu bệnh có thể mắc, không kê đơn hoặc liều thuốc. Chỉ chọn specialty đang hoạt động trong danh sách; điền đúng ID. Không yêu cầu tuổi, giới tính hay thông tin định danh trừ khi thật sự cần cho việc định hướng an toàn. Nếu thiếu thông tin cần thiết, urgency_level phải là null, booking_allowed phải false và đặt tối đa 3 câu hỏi cụ thể; không suy ra ROUTINE chỉ vì chưa nhận diện dấu hiệu cấp cứu. Có thể nêu specialty sơ bộ nếu có căn cứ, nhưng không đồng nghĩa được đặt lịch. follow_up_questions cũng có thể gồm câu hỏi bổ sung không bắt buộc; nếu mô tả đã đủ căn cứ, vẫn đặt booking_allowed=true và không hạ kết quả chỉ vì có câu hỏi phụ. Khi không phù hợp danh mục, specialty và ID phải là null. Trả lời ngắn gọn, lịch sự bằng tiếng Việt. EMERGENCY chỉ dùng cho dấu hiệu cấp cứu rõ; booking_allowed chỉ true khi đủ thông tin cần thiết, có chuyên khoa đang hoạt động được xác định và không phải cấp cứu. Nếu đầu vào gồm mô tả ban đầu, câu hỏi làm rõ trước đó và thông tin người dùng bổ sung, hãy đọc chúng như cùng một vấn đề sức khỏe; ghép từng câu trả lời với câu hỏi tương ứng, giữ lại các dữ kiện đã nêu và không hỏi lại thông tin đã được trả lời. Chỉ hỏi phần còn thiếu để định hướng an toàn, không tự suy ra dữ kiện chưa được cung cấp.'
             },
             {
               role: 'user',
@@ -301,6 +355,11 @@ const validateAndNormalizeAIResult = (candidate, specialties) => {
   if (!isValidContract(candidate)) return null
   if (candidate.urgency_level === 'EMERGENCY') return emergencyResult()
   const name = candidate.predicted_specialty?.trim() || null
+  const questions = candidate.follow_up_questions
+    .map((question) => question.trim())
+    .filter(Boolean)
+    .slice(0, 3)
+  const needsClarification = candidate.booking_allowed !== true || candidate.urgency_level === null
   if (name === null) {
     if (candidate.specialty_id !== null) return null
     const questions = candidate.follow_up_questions
@@ -311,11 +370,13 @@ const validateAndNormalizeAIResult = (candidate, specialties) => {
       ...candidate,
       predicted_specialty: null,
       specialty_id: null,
+      assessment_status: 'NEEDS_INFORMATION',
       recommendation_source: 'AI',
+      urgency_level: candidate.urgency_level === 'ROUTINE' ? null : candidate.urgency_level,
+      urgency_text: candidate.urgency_level === 'ROUTINE'
+        ? 'Chưa đủ thông tin để đánh giá mức độ cần chú ý.'
+        : candidate.urgency_text.slice(0, 300),
       booking_allowed: false,
-      urgency_text:
-        candidate.urgency_text.slice(0, 300) ||
-        'Chưa đủ thông tin để gợi ý chuyên khoa phù hợp.',
       initial_advice:
         candidate.initial_advice.slice(0, 1000) ||
         'Bạn có thể mô tả rõ hơn để được định hướng phù hợp.',
@@ -339,19 +400,27 @@ const validateAndNormalizeAIResult = (candidate, specialties) => {
     ...candidate,
     predicted_specialty: active.name,
     specialty_id: Number(active.id),
+    assessment_status: needsClarification ? 'CLARIFY' : 'ASSESSED',
     recommendation_source: 'AI',
-    booking_allowed: candidate.booking_allowed,
+    urgency_level: needsClarification && candidate.urgency_level === 'ROUTINE'
+      ? null
+      : candidate.urgency_level,
+    booking_allowed: candidate.booking_allowed === true && !needsClarification && candidate.urgency_level !== 'EMERGENCY',
     urgency_text:
       candidate.urgency_level === 'EMERGENCY'
         ? emergencyResult().urgency_text
+        : needsClarification && candidate.urgency_level === 'ROUTINE'
+          ? 'Chưa đủ thông tin để đánh giá mức độ cần chú ý.'
         : candidate.urgency_text.slice(0, 300),
     initial_advice:
       candidate.urgency_level === 'EMERGENCY'
         ? emergencyResult().initial_advice
         : candidate.initial_advice.slice(0, 1000),
-    follow_up_questions: candidate.follow_up_questions.map((question) =>
-      question.slice(0, 240)
-    ),
+    follow_up_questions: (questions.length
+      ? questions
+      : needsClarification
+        ? ['Bạn có thể mô tả rõ hơn vị trí, thời điểm bắt đầu và dấu hiệu đi kèm không?']
+        : []).map((question) => question.slice(0, 240)),
     disclaimer: DISCLAIMER
   }
 }
@@ -374,6 +443,8 @@ const createSymptomClassifier =
     if (!text || text.length > MAX_SYMPTOM_LENGTH)
       throw new Error('INVALID_SYMPTOMS')
     if (isEmergency(text)) return emergencyResult()
+    if (isInsufficientSymptomDetail(text))
+      return classifyByRules(text, Array.isArray(specialties) ? specialties : [])
     if (isMedicationRequest(text) || isVagueSkinConcern(text))
       return classifyByRules(
         text,
@@ -404,6 +475,7 @@ module.exports = {
   createSymptomClassifier,
   classifySymptomWithAI,
   isEmergency,
+  isInsufficientSymptomDetail,
   isMedicationRequest,
   isVagueSkinConcern,
   emergencyResult,

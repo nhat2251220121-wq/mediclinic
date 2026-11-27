@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axiosClient from '../../api/axiosClient';
 import { Bot, Send, Sparkles, AlertTriangle, ArrowRight, ShieldCheck, RefreshCw } from 'lucide-react';
 import StatusBadge from '../../components/common/StatusBadge';
-import { isSymptomBookingAllowed } from '../../utils/symptomAssistant.mjs';
+import { getSymptomAssessmentStatus, isSymptomBookingAllowed } from '../../utils/symptomAssistant.mjs';
 
 const AIChatSymptom = () => {
   const [symptoms, setSymptoms] = useState('');
@@ -30,6 +30,8 @@ const AIChatSymptom = () => {
   };
 
   const canBook = isSymptomBookingAllowed(result);
+  const assessmentStatus = getSymptomAssessmentStatus(result);
+  const badgeStatus = assessmentStatus === 'ASSESSED' ? result?.urgency_level : assessmentStatus;
   const handleBooking = () => {
     if (!canBook) return;
     navigate('/patient/booking', {
@@ -67,7 +69,7 @@ const AIChatSymptom = () => {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-xs text-slate-500 flex items-start gap-2 max-w-2xl">
               <ShieldCheck className="w-4 h-4 text-teal-700 shrink-0 mt-0.5" />
-              <span>Khi AI được sử dụng, mô tả sẽ được gửi tới OpenAI để xử lý. MediClinic không lưu thành lịch sử trợ lý. Không nhập tên, số điện thoại hoặc thông tin nhận dạng. Đây không phải chẩn đoán.</span>
+              <span>Khi dùng AI, mô tả được máy chủ MediClinic gửi tới nhà cung cấp AI đang cấu hình để xử lý. MediClinic không lưu thành lịch sử trợ lý. Không nhập tên, số điện thoại hoặc thông tin nhận dạng. Đây không phải chẩn đoán.</span>
             </div>
             <button type="submit" disabled={loading || !/[\p{L}\p{N}]/u.test(symptoms.trim()) || symptoms.length > 2000} className="min-h-11 w-full justify-center rounded-xl bg-teal-800 px-6 py-3 text-white font-semibold hover:bg-teal-900 transition-colors flex items-center gap-2 disabled:opacity-50 sm:w-auto">
               {loading ? <><RefreshCw className="w-4 h-4 animate-spin" /> Đang xử lý...</> : <><Bot className="w-4 h-4" /> Phân loại triệu chứng</>}
@@ -87,7 +89,7 @@ const AIChatSymptom = () => {
             <div className="w-10 h-10 bg-teal-100 text-teal-800 rounded-xl flex items-center justify-center"><Bot className="w-6 h-6" /></div>
             <div><h3 className="font-bold text-slate-900">Định hướng khám</h3><p className="text-xs text-slate-500">Thông tin tham khảo, không thay thế đánh giá y tế</p></div>
           </div>
-          <StatusBadge status={result.urgency_level} type="urgency" />
+          <StatusBadge status={badgeStatus} type="urgency" />
         </div>
 
         {result.urgency_level === 'EMERGENCY' && <div role="alert" className="bg-red-50 border border-red-200 text-red-900 p-4 rounded-2xl font-semibold">Không tiếp tục đặt lịch thông thường. Hãy gọi 115 hoặc đến cơ sở cấp cứu gần nhất ngay.</div>}

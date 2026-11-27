@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { createServer } = require('node:http');
 const {
   classifyByRules,
   createSymptomClassifier,
@@ -30,7 +31,7 @@ const makeCandidate = (overrides = {}) => ({
 });
 
 test('triage display normalization uses API values and leaves missing or invalid urgency unknown', async () => {
-  const { normalizeSymptomTriageResult } = await import('../../Frontend/src/utils/symptomAssistant.mjs');
+  const { normalizeSymptomTriageResult, shouldRequestServiceAdvice } = await import('../../Frontend/src/utils/symptomAssistant.mjs');
   const normalized = normalizeSymptomTriageResult(makeCandidate({ urgency_level: 'URGENT' }));
   assert.equal(normalized.predicted_specialty, 'Da liễu');
   assert.equal(normalized.urgency_level, 'URGENT');
@@ -44,13 +45,16 @@ test('triage display normalization uses API values and leaves missing or invalid
       assert.equal(triage.urgency_level, null);
     }
   }
+  assert.equal(normalizeSymptomTriageResult(makeCandidate({ booking_allowed: false })).booking_allowed, false);
+  assert.equal(shouldRequestServiceAdvice('đau chân', makeCandidate({ booking_allowed: false })), false);
+  assert.equal(shouldRequestServiceAdvice('ngứa da và nổi mẩn đỏ', makeCandidate({ follow_up_questions: ['Bắt đầu từ khi nào?'], booking_allowed: true })), true);
 });
 
 test('chấp nhận đầu ra đủ schema, chỉ giữ chuyên khoa hoạt động và chuẩn hóa source', async () => {
   const classifier = createSymptomClassifier({ provider: async () => makeCandidate(), logger: {} });
   const result = await classifier('Da bị ngứa', specialties);
   assert.deepEqual(Object.keys(result).sort(), [
-    'booking_allowed', 'disclaimer', 'follow_up_questions', 'initial_advice',
+    'assessment_status', 'booking_allowed', 'disclaimer', 'follow_up_questions', 'initial_advice',
     'predicted_specialty', 'recommendation_source', 'specialty_id', 'urgency_level', 'urgency_text'
   ].sort());
   assert.equal(result.recommendation_source, 'AI');
@@ -98,6 +102,84 @@ test('nhận diện dấu hiệu cấp cứu trước provider và cấm đặt 
   assert.equal(isSymptomBookingAllowed(result), false);
   assert.equal(isSymptomBookingAllowed({ urgency_level: 'ROUTINE', booking_allowed: true, predicted_specialty: null, specialty_id: null }), false);
   assert.equal(isSymptomBookingAllowed({ urgency_level: 'URGENT', booking_allowed: false }), false);
+});
+
+test('không nhận nhầm đau tai thành cấp cứu; tôn trọng phủ định nhưng vẫn bắt dấu hiệu dương tính', () => {
+  for (const phrase of ['đau tai', 'đau tai nhẹ', 'không đau ngực dữ dội', 'không khó thở nặng', 'không tím tái']) {
+    assert.equal(isEmergency(phrase), false, phrase);
+  }
+  for (const phrase of ['môi tím tái', 'da xanh', 'không thở được', 'ngạt thở', 'đau ngực dữ dội nhưng không khó thở']) {
+    assert.equal(isEmergency(phrase), true, phrase);
+  }
+});
+
+test('mô tả mơ hồ hoặc chỉ nêu đau tại một vị trí cần làm rõ và không cho đặt lịch', async () => {
+  const active = [...specialties, { id: 15, name: 'Tai Mũi Họng' }];
+  let providerCalls = 0;
+  const classifier = createSymptomClassifier({ provider: async () => { providerCalls += 1; return makeCandidate(); }, logger: {} });
+  for (const phrase of ['Không biết mình bị gì', 'Cảm thấy trong người không khỏe', 'đau chân', 'Tôi đau chân, khám khoa nào?', 'đau tai nhẹ', 'đau tai hơi nhẹ']) {
+    const result = await classifier(phrase, active);
+    assert.equal(result.urgency_level, null, phrase);
+    assert.equal(result.booking_allowed, false, phrase);
+    assert.equal(result.assessment_status, /đau chân|đau tai/.test(phrase) ? 'CLARIFY' : 'NEEDS_INFORMATION', phrase);
+    assert.ok(result.follow_up_questions.length > 0, phrase);
+    assert.notEqual(result.urgency_level, 'EMERGENCY', phrase);
+  }
+  const ear = await classifier('đau tai nhẹ', active);
+  assert.equal(ear.predicted_specialty, 'Tai Mũi Họng', 'specialty may be shown as preliminary guidance');
+  assert.equal(providerCalls, 0, 'ambiguous examples are handled conservatively before provider classification');
+});
+
+test('API trả urgency chưa xác định và booking_allowed false cho mô tả mơ hồ; emergency luôn chặn', async () => {
+  const active = [...specialties, { id: 15, name: 'Tai Mũi Họng' }];
+  const classify = createSymptomClassifier({
+    provider: async () => makeCandidate({ follow_up_questions: [], booking_allowed: true }),
+    logger: {}
+  });
+  const controller = createAIController({ db: { query: async () => [active] }, classify });
+  const invoke = async (symptoms) => {
+    const response = { statusCode: null, body: null, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
+    await controller.classifySymptom({ body: { symptoms } }, response, (error) => { throw error; });
+    return response;
+  };
+  for (const symptoms of ['Không biết mình bị gì', 'Tôi cảm thấy trong người không khỏe, nhưng không biết mình bị gì', 'đau chân', 'đau tai nhẹ']) {
+    const response = await invoke(symptoms);
+    assert.equal(response.statusCode, 200, symptoms);
+    assert.equal(response.body.data.urgency_level, null, symptoms);
+    assert.equal(response.body.data.booking_allowed, false, symptoms);
+    assert.equal(response.body.data.assessment_status, symptoms.includes('đau chân') || symptoms.includes('đau tai') ? 'CLARIFY' : 'NEEDS_INFORMATION', symptoms);
+    assert.ok(response.body.data.follow_up_questions.length > 0, symptoms);
+  }
+  const clear = await invoke('Tôi bị ngứa da và nổi mẩn đỏ ở cánh tay');
+  assert.equal(clear.body.data.urgency_level, 'ROUTINE');
+  assert.equal(clear.body.data.booking_allowed, true);
+  assert.equal(clear.body.data.assessment_status, 'ASSESSED');
+  const emergency = await invoke('Đau ngực dữ dội kèm khó thở');
+  assert.equal(emergency.body.data.urgency_level, 'EMERGENCY');
+  assert.equal(emergency.body.data.booking_allowed, false);
+});
+
+test('câu hỏi phụ không khóa một kết quả đủ điều kiện; booking false vẫn yêu cầu làm rõ', async () => {
+  const optionalQuestion = createSymptomClassifier({
+    provider: async () => makeCandidate({ follow_up_questions: ['Bắt đầu từ khi nào?'], booking_allowed: true }),
+    logger: {}
+  });
+  const assessed = await optionalQuestion('ngứa da và nổi mẩn đỏ ở cánh tay', specialties);
+  assert.equal(assessed.urgency_level, 'ROUTINE');
+  assert.equal(assessed.booking_allowed, true);
+  assert.equal(assessed.assessment_status, 'ASSESSED');
+  assert.equal(assessed.specialty_id, 9);
+  assert.deepEqual(assessed.follow_up_questions, ['Bắt đầu từ khi nào?']);
+
+  const needsDetails = createSymptomClassifier({
+    provider: async () => makeCandidate({ follow_up_questions: ['Bắt đầu từ khi nào?'], booking_allowed: false }),
+    logger: {}
+  });
+  const clarify = await needsDetails('ngứa da và nổi mẩn đỏ ở cánh tay', specialties);
+  assert.equal(clarify.urgency_level, null);
+  assert.equal(clarify.booking_allowed, false);
+  assert.equal(clarify.assessment_status, 'CLARIFY');
+  assert.equal(clarify.specialty_id, 9, 'retain a supported preliminary specialty');
 });
 
 test('không tìm được chuyên khoa thì không tự gán ID hoặc mở nút đặt lịch', async () => {
@@ -229,6 +311,54 @@ test('Responses API request dùng model/config và JSON Schema; không cần g�
   assert.equal(captured.body.text.format.strict, true);
   assert.equal(captured.options.headers.Authorization, 'Bearer test-only-key');
   assert.deepEqual(response, result);
+});
+
+test('provider giả lập local trả HTTP 503 hoặc timeout thì Backend fallback RULE_BASED', async (t) => {
+  const runAgainstLocalProvider = async ({ statusCode = null, delayMs = 0, timeoutMs = 500 }) => {
+    const server = createServer((_request, response) => {
+      if (statusCode) {
+        response.writeHead(statusCode, { 'Content-Type': 'application/json' });
+        response.end('{"error":"simulated provider failure"}');
+        return;
+      }
+      setTimeout(() => {
+        if (!response.destroyed) {
+          response.writeHead(200, { 'Content-Type': 'application/json' });
+          response.end('{"output_text":"{}"}');
+        }
+      }, delayMs);
+    });
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const address = server.address();
+    try {
+      const classifier = createSymptomClassifier({
+        provider: (args) => requestOpenAI({
+          ...args,
+          apiKey: 'local-test-only',
+          model: 'local-test-model',
+          baseUrl: `http://127.0.0.1:${address.port}/v1`,
+          timeoutMs
+        }),
+        logger: {}
+      });
+      return await classifier('Tôi bị ngứa da và nổi mẩn đỏ ở cánh tay.', specialties);
+    } finally {
+      server.closeAllConnections?.();
+      await new Promise((resolve) => server.close(resolve));
+    }
+  };
+
+  const unavailable = await runAgainstLocalProvider({ statusCode: 503 });
+  assert.equal(unavailable.recommendation_source, 'RULE_BASED');
+  assert.equal(unavailable.specialty_id, 9);
+  assert.equal(unavailable.booking_allowed, true);
+
+  const timedOut = await runAgainstLocalProvider({ delayMs: 100, timeoutMs: 20 });
+  assert.equal(timedOut.recommendation_source, 'RULE_BASED');
+  assert.equal(timedOut.specialty_id, 9);
 });
 
 test('public guest API accepts symptom and existing per-IP quota is enforced', async () => {

@@ -3,10 +3,11 @@ import { Send, Bot, ChevronRight, Minimize2, Stethoscope } from 'lucide-react';
 import axiosClient from '../../api/axiosClient';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { getAssistantNavigationIntent, getPatientChatIntent, isDirectServiceLookupIntent, normalizeSymptomTriageResult } from '../../utils/symptomAssistant.mjs';
+import { formatSymptomReply, getAssistantNavigationIntent, getPatientChatIntent, getSymptomAssessmentStatus, isDirectServiceLookupIntent, isSymptomBookingAllowed, normalizeSymptomTriageResult, shouldRequestServiceAdvice } from '../../utils/symptomAssistant.mjs';
 import { getServiceBookingNavigation, normalizeServiceAdviceResult } from '../../utils/serviceAdvice.mjs';
 import ImageWithFallback from './ImageWithFallback';
 import StatusBadge from './StatusBadge';
+import { appendSymptomTurn, buildSymptomContext, isNewSymptomTopicRequest } from '../../utils/symptomConversation.mjs';
 
 const AIChatWidget = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -22,12 +23,19 @@ const AIChatWidget = () => {
   const [loading, setLoading] = useState(false);
   const [retryText, setRetryText] = useState('');
   const [emergencyBlocked, setEmergencyBlocked] = useState(false);
+  const [hasActiveSymptomContext, setHasActiveSymptomContext] = useState(false);
   const [viewportMetrics, setViewportMetrics] = useState({ width: 0, height: 0, keyboardInset: 0 });
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const messagesEndRef = useRef(null);
   const sendInProgressRef = useRef(false);
   const pendingDoctorScheduleRef = useRef('');
+  const symptomConversationRef = useRef(null);
+
+  const clearSymptomContext = () => {
+    symptomConversationRef.current = null;
+    setHasActiveSymptomContext(false);
+  };
 
   const requestServiceAdvice = (question, specialtyId = null) => axiosClient.post('/ai/service-advice', {
     question,
@@ -48,7 +56,7 @@ const AIChatWidget = () => {
       services: result.services,
       doctorsIncluded: result.doctorsIncluded,
       patientDoctorAccess: isAuthenticated && user?.role === 'PATIENT',
-      serviceBookingAllowed: result.bookingAllowed,
+      serviceBookingAllowed: result.bookingAllowed && (!triage || isSymptomBookingAllowed(triage)),
       noServiceMatch: result.noServiceMatch,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }]);
@@ -143,6 +151,9 @@ const AIChatWidget = () => {
     setEmergencyBlocked(false);
 
     try {
+      const startsNewSymptomTopic = isNewSymptomTopicRequest(userText);
+      if (startsNewSymptomTopic) clearSymptomContext();
+
       const detectedPatientQueryIntent = getPatientChatIntent(userText);
       const isAnsweringScheduleClarification = Boolean(pendingDoctorScheduleRef.current)
         && (!detectedPatientQueryIntent || detectedPatientQueryIntent === 'DOCTOR_SCHEDULE');
@@ -154,6 +165,7 @@ const AIChatWidget = () => {
         ? `${pendingDoctorScheduleRef.current} ${userText}`.trim()
         : userText;
       if (patientQueryIntent) {
+        clearSymptomContext();
         if (!isAuthenticated || user?.role !== 'PATIENT') {
           setMessages((prev) => [...prev, {
             id: Date.now() + 1,
@@ -182,6 +194,7 @@ const AIChatWidget = () => {
 
       const navigationIntent = getAssistantNavigationIntent(userText, isAuthenticated);
       if (navigationIntent) {
+        clearSymptomContext();
         setMessages((prev) => [...prev, {
           id: Date.now() + 1,
           sender: 'ai',
@@ -193,6 +206,7 @@ const AIChatWidget = () => {
       }
 
       if (isDirectServiceLookupIntent(userText)) {
+        clearSymptomContext();
         const serviceResponse = await requestServiceAdvice(userText);
         addServiceAdviceMessage(serviceResponse.data, serviceResponse.message);
         return;
@@ -201,10 +215,15 @@ const AIChatWidget = () => {
       // Classification is an emergency check and optional specialty hint only.
       // The verified service-advice response is the sole source for service text,
       // card data and booking eligibility.
+      const pendingConversation = appendSymptomTurn(
+        startsNewSymptomTopic ? null : symptomConversationRef.current,
+        userText
+      );
+      const symptomContext = buildSymptomContext(pendingConversation);
       let classification = null;
       let classificationMessage = '';
       try {
-        const classificationResponse = await axiosClient.post('/ai/classify-symptom', { symptoms: userText });
+        const classificationResponse = await axiosClient.post('/ai/classify-symptom', { symptoms: symptomContext });
         classificationMessage = typeof classificationResponse?.message === 'string' ? classificationResponse.message : '';
         classification = normalizeSymptomTriageResult(classificationResponse?.success ? classificationResponse?.data : null);
       } catch {
@@ -213,6 +232,7 @@ const AIChatWidget = () => {
       }
 
       if (classification?.urgency_level === 'EMERGENCY') {
+        clearSymptomContext();
         setEmergencyBlocked(true);
         setMessages((prev) => [...prev, {
           id: Date.now() + 1,
@@ -225,8 +245,26 @@ const AIChatWidget = () => {
         return;
       }
 
-      const serviceResponse = await requestServiceAdvice(userText, classification?.specialty_id || null);
+      if (!classification || !shouldRequestServiceAdvice(userText, classification)) {
+        if (classification) pendingConversation.pendingQuestions = classification.follow_up_questions;
+        symptomConversationRef.current = pendingConversation;
+        setHasActiveSymptomContext(true);
+        setEmergencyBlocked(false);
+        setMessages((prev) => [...prev, {
+          id: Date.now() + 1,
+          sender: 'ai',
+          text: classification
+            ? formatSymptomReply(classification)
+            : 'Chưa thể đánh giá mô tả này an toàn lúc này. Bạn vui lòng mô tả rõ triệu chứng hơn hoặc thử lại sau.',
+          ...(classification ? { triage: classification } : {}),
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }]);
+        return;
+      }
+
+      const serviceResponse = await requestServiceAdvice(symptomContext, classification?.specialty_id || null);
       addServiceAdviceMessage(serviceResponse.data, serviceResponse.message, classification || {});
+      clearSymptomContext();
     } catch (err) {
       setRetryText(userText);
       setMessages((prev) => [
@@ -245,7 +283,19 @@ const AIChatWidget = () => {
   };
 
   const handleQuickQuestion = (q) => {
+    clearSymptomContext();
     setInput(q);
+  };
+
+  const startNewSymptomQuestion = () => {
+    clearSymptomContext();
+    setEmergencyBlocked(false);
+    setMessages((prev) => [...prev, {
+      id: Date.now(),
+      sender: 'ai',
+      text: 'Được, hãy mô tả vấn đề sức khỏe mới. Tôi sẽ không dùng thông tin của câu hỏi trước cho lượt này.',
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }]);
   };
 
   return (
@@ -330,6 +380,13 @@ const AIChatWidget = () => {
             >
               👨‍⚕️ Lịch trực bác sĩ
             </button>
+            {hasActiveSymptomContext && <button
+              type="button"
+              onClick={startNewSymptomQuestion}
+              className="px-2.5 py-1 bg-white border border-teal-200 rounded-lg text-teal-800 font-semibold hover:bg-teal-50 whitespace-nowrap transition"
+            >
+              ＋ Bắt đầu vấn đề mới
+            </button>}
           </div>}
 
           {/* Body tin nhắn */}
@@ -359,9 +416,7 @@ const AIChatWidget = () => {
                   {msg.triage && <section className={`min-w-0 overflow-hidden rounded-xl border p-3 text-xs shadow-sm ${msg.triage.urgency_level === 'EMERGENCY' ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-white'}`} aria-label="Kết quả định hướng triệu chứng">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <h4 className="font-bold text-slate-900">Định hướng triệu chứng</h4>
-                      {msg.triage.urgency_level
-                        ? <StatusBadge status={msg.triage.urgency_level} type="urgency" />
-                        : <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">Chưa xác định mức độ khẩn cấp</span>}
+                      <StatusBadge status={getSymptomAssessmentStatus(msg.triage) === 'ASSESSED' ? msg.triage.urgency_level : getSymptomAssessmentStatus(msg.triage)} type="urgency" />
                     </div>
                     <p className="mt-2 break-words text-slate-700"><span className="font-semibold">Chuyên khoa gợi ý:</span> {msg.triage.predicted_specialty || 'Chưa xác định'}</p>
                     {msg.triage.urgency_text && <p className="mt-1 break-words leading-relaxed text-slate-700">{msg.triage.urgency_text}</p>}

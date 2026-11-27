@@ -457,12 +457,13 @@ test('optional JWT middleware allows guests and validates any supplied token', (
   assert.equal(nextCount, 2);
 });
 
-test('service lookup intent uses generic request phrases while emergency safety remains in the backend', async () => {
+test('service lookup intent keeps symptom complaints in triage while direct catalog questions stay separate', async () => {
   const { isDirectServiceLookupIntent, shouldRequestServiceAdvice } = await import('../../Frontend/src/utils/symptomAssistant.mjs');
   assert.equal(isDirectServiceLookupIntent('Khám da liễu giá bao nhiêu?'), true);
-  assert.equal(isDirectServiceLookupIntent('Tôi đau răng thì khám dịch vụ nào?'), true);
-  assert.equal(isDirectServiceLookupIntent('Da mặt của tôi bị xấu nên cần đi khám khoa nào?'), true);
-  assert.equal(shouldRequestServiceAdvice('Tôi đau răng', { specialty_id: 21, urgency_level: 'ROUTINE' }), true);
-  assert.equal(shouldRequestServiceAdvice('Tôi bị đau răng', { specialty_id: null, urgency_level: 'ROUTINE', follow_up_questions: ['Hỏi thêm'] }), true);
+  assert.equal(isDirectServiceLookupIntent('Tôi đau răng thì khám dịch vụ nào?'), false);
+  assert.equal(isDirectServiceLookupIntent('Da mặt của tôi bị xấu nên cần đi khám khoa nào?'), false);
+  assert.equal(isDirectServiceLookupIntent('Tôi đau chân, khám khoa nào?'), false);
+  assert.equal(shouldRequestServiceAdvice('Tôi đau răng', { specialty_id: 21, predicted_specialty: 'Răng Hàm Mặt', urgency_level: 'ROUTINE', booking_allowed: true }), true);
+  assert.equal(shouldRequestServiceAdvice('Tôi bị đau răng', { specialty_id: null, urgency_level: null, booking_allowed: false, follow_up_questions: ['Hỏi thêm'] }), false);
   assert.equal(shouldRequestServiceAdvice('đau ngực', { specialty_id: 21, urgency_level: 'EMERGENCY' }), false);
 });
