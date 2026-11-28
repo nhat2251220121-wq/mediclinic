@@ -15,6 +15,32 @@ const formatClinicDate = (value) => {
   return year && month && day ? `${day}/${month}/${year}` : '—';
 };
 
+const appointmentStartTimestamp = (appointmentDate, timeSlot) => {
+  const date = String(appointmentDate || '').slice(0, 10);
+  const dateMatch = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const timeMatch = String(timeSlot || '').match(/(?:^|\b)(\d{1,2}):(\d{2})(?:\b|$)/);
+  if (!dateMatch || !timeMatch) return null;
+
+  const [, yearText, monthText, dayText] = dateMatch;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(timeMatch[1]);
+  const minute = Number(timeMatch[2]);
+  const calendarDate = new Date(Date.UTC(year, month - 1, day));
+  if (calendarDate.getUTCFullYear() !== year || calendarDate.getUTCMonth() !== month - 1 || calendarDate.getUTCDate() !== day
+    || hour > 23 || minute > 59) return null;
+
+  // Clinic time is Asia/Ho_Chi_Minh (UTC+7); convert the appointment start to an absolute timestamp.
+  return Date.UTC(year, month - 1, day, hour - 7, minute);
+};
+
+const canEnterExam = (appointmentDate, timeSlot, now, allowEarlyExamDemo) => {
+  if (allowEarlyExamDemo) return true;
+  const start = appointmentStartTimestamp(appointmentDate, timeSlot);
+  return start !== null && now >= start;
+};
+
 const PatientQueue = () => {
   const [appointments, setAppointments] = useState([]);
   const [followUps, setFollowUps] = useState([]);
@@ -24,6 +50,8 @@ const PatientQueue = () => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [activeTab, setActiveTab] = useState('ARRIVALS');
+  const [clinicNow, setClinicNow] = useState(() => Date.now());
+  const [allowEarlyExamDemo, setAllowEarlyExamDemo] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -46,6 +74,37 @@ const PatientQueue = () => {
 
   useEffect(() => { fetchQueue(); }, [fetchQueue]);
 
+  useEffect(() => {
+    let active = true;
+    axiosClient.get('/doctors/me/exam-timing-mode')
+      .then((result) => {
+        if (active) setAllowEarlyExamDemo(result.data?.allowEarlyExamDemo === true);
+      })
+      .catch(() => {
+        // Fail closed: if mode cannot be confirmed, keep the normal appointment-time restriction.
+        if (active) setAllowEarlyExamDemo(false);
+      });
+    return () => { active = false; };
+  }, []);
+
+  const nextExamStart = useMemo(() => {
+    const starts = [
+      ...appointments.filter((app) => app.status === 'CONFIRMED').map((app) => appointmentStartTimestamp(app.appointment_date, app.time_slot)),
+      ...followUps.filter((item) => item.active_appointment_status === 'CONFIRMED')
+        .map((item) => appointmentStartTimestamp(item.active_appointment_date, item.active_time_slot))
+    ].filter((start) => start !== null && start > clinicNow);
+    return starts.length ? Math.min(...starts) : null;
+  }, [appointments, followUps, clinicNow]);
+
+  useEffect(() => {
+    if (nextExamStart === null) return undefined;
+    const timeout = window.setTimeout(
+      () => setClinicNow(Date.now()),
+      Math.min(2_147_000_000, Math.max(0, nextExamStart - Date.now() + 25))
+    );
+    return () => window.clearTimeout(timeout);
+  }, [nextExamStart]);
+
   const term = search.trim().toLocaleLowerCase('vi');
   const linkedFollowUpAppointmentIds = useMemo(
     () => new Set(followUps.map((item) => Number(item.follow_up_appointment_id)).filter(Boolean)),
@@ -66,6 +125,22 @@ const PatientQueue = () => {
 
   const selectedAppointment = searchParams.get('appointmentId');
   const openAppointment = (id) => navigate(`/doctor/examination?appointmentId=${id}`);
+  const renderExamButton = (appointmentId, appointmentDate, timeSlot) => {
+    const start = appointmentStartTimestamp(appointmentDate, timeSlot);
+    const ready = canEnterExam(appointmentDate, timeSlot, clinicNow, allowEarlyExamDemo);
+    const enteringEarlyForDemo = ready && allowEarlyExamDemo && start !== null && clinicNow < start;
+    return (
+      <button
+        type="button"
+        disabled={!ready}
+        title={enteringEarlyForDemo ? 'Chế độ demo đang bật: có thể vào khám trước giờ hẹn' : ready ? 'Vào khám' : 'Chưa đến giờ hẹn'}
+        onClick={() => openAppointment(appointmentId)}
+        className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold ${ready ? 'bg-teal-600 text-white hover:bg-teal-700' : 'cursor-not-allowed bg-slate-200 text-slate-500'}`}
+      >
+        <Stethoscope className="h-3.5 w-3.5" />{enteringEarlyForDemo ? 'Vào khám · Demo' : ready ? 'Vào khám' : 'Chưa đến giờ'}
+      </button>
+    );
+  };
 
   return (
     <div className="space-y-5">
@@ -114,17 +189,13 @@ const PatientQueue = () => {
             <tbody className="divide-y divide-slate-100 text-sm">
               {loading ? <tr><td colSpan="7" className="py-8 text-center text-slate-400">Đang tải danh sách...</td></tr>
                 : activeTab === 'ARRIVALS' ? arrivalPatients.length === 0 ? <tr><td colSpan="7" className="py-8 text-center text-slate-400">Không có bệnh nhân cần tiếp nhận trong ngày này.</td></tr> : arrivalPatients.map((app) => <tr key={app.appointment_id} className={`${String(selectedAppointment) === String(app.appointment_id) ? 'bg-sky-50' : ''} hover:bg-slate-50/60`}>
-                  <td className="px-5 py-4 font-semibold text-sky-700">#{app.appointment_id}</td><td className="px-5 py-4 font-semibold text-slate-800">{app.patient_name}</td><td className="px-5 py-4 text-slate-600">{app.patient_phone || '—'}</td><td className="px-5 py-4"><div>{formatClinicDate(app.appointment_date)}</div><div className="text-xs text-slate-500">{app.time_slot || '—'}</div></td><td className="px-5 py-4">{app.service_name || 'Khám tổng quát'}</td><td className="px-5 py-4"><StatusBadge status={app.status} type="appointment" /></td><td className="px-5 py-4 text-center">{app.status === 'CONFIRMED' ? <button type="button" onClick={() => openAppointment(app.appointment_id)} className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white"><Stethoscope className="h-3.5 w-3.5" />Vào khám</button> : <span className="text-xs text-amber-700">Chờ tiếp nhận</span>}</td>
+                  <td className="px-5 py-4 font-semibold text-sky-700">#{app.appointment_id}</td><td className="px-5 py-4 font-semibold text-slate-800">{app.patient_name}</td><td className="px-5 py-4 text-slate-600">{app.patient_phone || '—'}</td><td className="px-5 py-4"><div>{formatClinicDate(app.appointment_date)}</div><div className="text-xs text-slate-500">{app.time_slot || '—'}</div></td><td className="px-5 py-4">{app.service_name || 'Khám tổng quát'}</td><td className="px-5 py-4"><StatusBadge status={app.status} type="appointment" /></td><td className="px-5 py-4 text-center">{app.status === 'CONFIRMED' ? renderExamButton(app.appointment_id, app.appointment_date, app.time_slot) : <span className="text-xs text-amber-700">Chờ tiếp nhận</span>}</td>
                 </tr>)
                 : visibleFollowUps.length === 0 ? <tr><td colSpan="7" className="py-8 text-center text-slate-400">Không có lịch tái khám được chỉ định trong ngày này.</td></tr> : visibleFollowUps.map((item) => <tr key={item.follow_up_id} className="hover:bg-slate-50/60">
                   <td className="px-5 py-4 font-semibold text-teal-700">#{item.follow_up_id}</td><td className="px-5 py-4 font-semibold text-slate-800">{item.patient_name}</td><td className="px-5 py-4 text-slate-600">{item.patient_phone || '—'}</td><td className="px-5 py-4"><div>{formatClinicDate(item.active_appointment_date || item.latest_appointment_date || item.follow_up_date)}</div><div className="text-xs text-slate-500">{item.active_time_slot || item.latest_time_slot || 'Chưa đặt lịch mới'}</div></td><td className="px-5 py-4">{item.service_name || 'Tái khám'}</td><td className="px-5 py-4">{item.follow_up_status === 'COMPLETED' ? <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">Đã tái khám</span> : item.follow_up_status === 'DATA_ISSUE' ? <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">Cần đối soát</span> : item.active_appointment_id ? <StatusBadge status={item.active_appointment_status} type="appointment" /> : item.latest_appointment_status === 'NO_SHOW' ? <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">Đã vắng mặt · có thể đặt lại</span> : item.latest_appointment_status === 'CANCELLED' ? <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">Đã hủy · có thể đặt lại</span> : <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">Bác sĩ hẹn · chưa có lịch mới</span>}</td>
                   <td className="px-5 py-4 text-center">
                     <div className="flex flex-wrap justify-center gap-2">
-                      {item.active_appointment_id && item.active_appointment_status === 'CONFIRMED' && item.active_appointment_date === workDate && (
-                        <button type="button" onClick={() => openAppointment(item.active_appointment_id)} className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white">
-                          <Stethoscope className="h-3.5 w-3.5" />Vào khám
-                        </button>
-                      )}
+                      {item.active_appointment_id && item.active_appointment_status === 'CONFIRMED' && item.active_appointment_date === workDate && renderExamButton(item.active_appointment_id, item.active_appointment_date, item.active_time_slot)}
                       <button type="button" onClick={() => openAppointment(item.source_appointment_id)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
                         {item.active_appointment_id ? 'Xem lần khám trước' : 'Mở hồ sơ gần nhất'}
                       </button>

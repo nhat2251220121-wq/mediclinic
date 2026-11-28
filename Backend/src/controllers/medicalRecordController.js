@@ -2,6 +2,7 @@ const { pool } = require('../config/db');
 const { syncInvoiceNotification, createMedicalRecordNotification, emitNotificationsUpdated } = require('../utils/invoiceNotifications');
 const { decorateFollowUp } = require('../utils/followUps');
 const { validateVitalSigns, normalizeIcd10Code, icd10CodeExists } = require('../utils/medicalRecordValidation');
+const { isEarlyExamDemoEnabled, appointmentStartMinute, isAppointmentStartReached } = require('../utils/examCompletionTiming');
 
 const clinicTodayISO = () => new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit'
@@ -39,7 +40,8 @@ const createMedicalRecord = async (req, res, next) => {
       'SELECT id, service_fee, medicine_fee FROM invoices WHERE appointment_id = ? FOR UPDATE', [appointment_id]
     );
     const [appRows] = await connection.query(
-      `SELECT a.appointment_id, a.patient_id, a.doctor_id, a.service_id, a.status, d.user_id,
+      `SELECT a.appointment_id, a.patient_id, a.doctor_id, a.service_id, a.status,
+       DATE_FORMAT(a.appointment_date, '%Y-%m-%d') AS appointment_date, a.time_slot, d.user_id,
        du.full_name AS doctor_name, svc.name AS service_name
        FROM appointments a JOIN doctors d ON d.id = a.doctor_id JOIN users du ON du.id = d.user_id
        LEFT JOIN services svc ON svc.id = a.service_id WHERE a.appointment_id = ? FOR UPDATE`, [appointment_id]
@@ -48,6 +50,17 @@ const createMedicalRecord = async (req, res, next) => {
     if (!appointment) { await connection.rollback(); return res.status(404).json({ success: false, message: 'Không tìm thấy lịch hẹn.' }); }
     if (appointment.user_id !== req.user.id) { await connection.rollback(); return res.status(403).json({ success: false, message: 'Lịch hẹn không thuộc bác sĩ đang đăng nhập.' }); }
     if (appointment.status !== 'CONFIRMED') { await connection.rollback(); return res.status(409).json({ success: false, message: 'Chỉ có thể khám lịch hẹn đã xác nhận.' }); }
+    if (!appointmentStartMinute(appointment.appointment_date, appointment.time_slot)) {
+      await connection.rollback();
+      return res.status(409).json({ success: false, message: 'Không xác định được giờ bắt đầu lịch hẹn, không thể hoàn thành buổi khám.' });
+    }
+    if (!isEarlyExamDemoEnabled() && !isAppointmentStartReached({
+      appointmentDate: appointment.appointment_date,
+      timeSlot: appointment.time_slot
+    })) {
+      await connection.rollback();
+      return res.status(409).json({ success: false, message: 'Chưa đến giờ hẹn, không thể hoàn thành buổi khám.' });
+    }
 
     const [recordResult] = await connection.query(
       `INSERT INTO appointment_records (appointment_id, doctor_id, patient_id, height, weight, blood_pressure,

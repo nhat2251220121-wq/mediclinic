@@ -10,6 +10,7 @@ router.get('/specialties', doctorController.getSpecialties);
 router.get('/services', doctorController.getServices);
 router.get('/availability/slots', doctorController.getAvailableSlots);
 router.get('/availability/shifts', doctorController.getShifts);
+router.get('/me/exam-timing-mode', verifyToken, isDoctor, doctorController.getExamTimingMode);
 router.get('/me/profile', verifyToken, isDoctor, doctorController.getMyProfile);
 router.patch('/me/profile', verifyToken, isDoctor, doctorController.updateMyProfile);
 router.post('/me/avatar', verifyToken, isDoctor, uploadImage, doctorController.uploadMyAvatar);

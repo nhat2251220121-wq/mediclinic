@@ -1,5 +1,11 @@
 const { pool } = require('../config/db');
 const { stageImage, publishImage, discardImage, deleteStoredImage } = require('../utils/imageStorage');
+const { isEarlyExamDemoEnabled } = require('../utils/examCompletionTiming');
+
+const getExamTimingMode = (req, res) => res.json({
+    success: true,
+    data: { allowEarlyExamDemo: isEarlyExamDemoEnabled() }
+});
 
 const clinicDateParts = (date = new Date()) => Object.fromEntries(
     new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' })
@@ -521,6 +527,7 @@ const removeMyAvatar = async (req, res, next) => {
 };
 
 module.exports = {
+    getExamTimingMode,
     getDoctors,
     getSpecialties,
     getServices,

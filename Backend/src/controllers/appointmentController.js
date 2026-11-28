@@ -1,5 +1,6 @@
 const { pool } = require('../config/db');
 const { validateFollowUpBooking } = require('../utils/followUps');
+const { isEarlyExamDemoEnabled, appointmentStartMinute, isAppointmentStartReached } = require('../utils/examCompletionTiming');
 
 const clinicDateParts = (date = new Date()) => Object.fromEntries(
   new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' })
@@ -292,7 +293,9 @@ const updateAppointmentStatus = async (req, res, next) => {
     // Match payment/cancellation lock order: invoice first, appointment second.
     await connection.query('SELECT id FROM invoices WHERE appointment_id = ? FOR UPDATE', [id]);
     const [rows] = await connection.query(
-      `SELECT a.appointment_id, a.patient_id, a.status, a.follow_up_id, d.user_id AS doctor_user_id
+      `SELECT a.appointment_id, a.patient_id, a.status, a.follow_up_id,
+       DATE_FORMAT(a.appointment_date, '%Y-%m-%d') AS appointment_date, a.time_slot,
+       d.user_id AS doctor_user_id
        FROM appointments a JOIN doctors d ON d.id = a.doctor_id WHERE a.appointment_id = ? FOR UPDATE`, [id]
     );
     const app = rows[0];
@@ -301,6 +304,17 @@ const updateAppointmentStatus = async (req, res, next) => {
     if (role === 'ADMIN') allowed = status === 'COMPLETED' && app.status === 'CONFIRMED';
     if (role === 'DOCTOR' && app.doctor_user_id === userId) allowed = status === 'COMPLETED' && app.status === 'CONFIRMED';
     if (!allowed) { await connection.rollback(); return res.status(403).json({ success: false, message: 'Bạn không có quyền hoặc lịch hẹn không ở trạng thái phù hợp.' }); }
+    if (!appointmentStartMinute(app.appointment_date, app.time_slot)) {
+      await connection.rollback();
+      return res.status(409).json({ success: false, message: 'Không xác định được giờ bắt đầu lịch hẹn, không thể hoàn thành buổi khám.' });
+    }
+    if (!isEarlyExamDemoEnabled() && !isAppointmentStartReached({
+      appointmentDate: app.appointment_date,
+      timeSlot: app.time_slot
+    })) {
+      await connection.rollback();
+      return res.status(409).json({ success: false, message: 'Chưa đến giờ hẹn, không thể hoàn thành buổi khám.' });
+    }
     if (app.follow_up_id) {
       const [[record]] = await connection.query('SELECT record_id FROM appointment_records WHERE appointment_id = ? LIMIT 1 FOR UPDATE', [id]);
       if (!record) {
